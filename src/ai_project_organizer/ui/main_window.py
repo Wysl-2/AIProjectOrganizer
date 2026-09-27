@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import QDir, Qt
+from PySide6.QtCore import QDir, QModelIndex, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QSplitter,
+    QStackedWidget,
 )
 
 from ai_project_organizer.project import (
@@ -21,15 +22,28 @@ from ai_project_organizer.project import (
     load_project_metadata,
     save_project_metadata,
 )
+from ai_project_organizer.project_registry import (
+    ProjectRegistry,
+    ProjectRegistryError,
+    load_project_registry,
+    save_project_registry,
+)
 from ai_project_organizer.ui.file_tree import FileTreeView
 from ai_project_organizer.ui.project_settings_dialog import (
     ProjectSettingsDialog,
 )
 from ai_project_organizer.ui.text_editor import TextEditor
+from ai_project_organizer.ui.welcome_page import (
+    ProjectBrowserEntry,
+    WelcomePage,
+)
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(
+            self,
+            project_registry_path: str | Path | None = None,
+    ) -> None:
         super().__init__()
 
         self.setWindowTitle("AI Project Organizer")
@@ -40,23 +54,31 @@ class MainWindow(QMainWindow):
         self.project_metadata: ProjectMetadata | None = None
         self.project_metadata_load_error: str | None = None
 
+        self.project_registry_path = project_registry_path
+        self.project_registry = ProjectRegistry()
+        self.project_registry_load_error: str | None = None
+
         self._setup_ui()
         self._setup_menu()
+        self._load_project_registry_state()
+        self._update_action_states()
 
     def _setup_ui(self) -> None:
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.central_stack = QStackedWidget()
+
+        self.welcome_page = WelcomePage()
+        self.welcome_page.open_existing_requested.connect(
+            self._open_workspace
+        )
+        self.welcome_page.project_open_requested.connect(
+            self._open_registered_project
+        )
 
         self.file_model = QFileSystemModel(self)
         self.file_model.setReadOnly(True)
 
-        root_path = QDir.homePath()
-        self.file_model.setRootPath(root_path)
-
         self.file_tree = FileTreeView()
         self.file_tree.setModel(self.file_model)
-        self.file_tree.setRootIndex(
-            self.file_model.index(root_path)
-        )
 
         self.file_tree.doubleClicked.connect(
             self._open_file_from_tree
@@ -92,73 +114,93 @@ class MainWindow(QMainWindow):
             self._update_window_title
         )
 
-        splitter.addWidget(self.file_tree)
-        splitter.addWidget(self.text_editor)
+        self.workspace_page = QSplitter(
+            Qt.Orientation.Horizontal
+        )
+        self.workspace_page.addWidget(
+            self.file_tree
+        )
+        self.workspace_page.addWidget(
+            self.text_editor
+        )
+        self.workspace_page.setSizes(
+            [300, 700]
+        )
 
-        splitter.setSizes([300, 700])
+        self.central_stack.addWidget(
+            self.welcome_page
+        )
+        self.central_stack.addWidget(
+            self.workspace_page
+        )
+        self.central_stack.setCurrentWidget(
+            self.welcome_page
+        )
 
-        self.setCentralWidget(splitter)
+        self.setCentralWidget(
+            self.central_stack
+        )
 
     def _setup_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
 
-        new_file_action = QAction(
+        self.new_file_action = QAction(
             "New File...",
             self,
         )
-        new_file_action.setShortcut(
+        self.new_file_action.setShortcut(
             QKeySequence.StandardKey.New
         )
-        new_file_action.triggered.connect(
+        self.new_file_action.triggered.connect(
             lambda: self._create_new_file()
         )
 
-        new_folder_action = QAction(
+        self.new_folder_action = QAction(
             "New Folder...",
             self,
         )
-        new_folder_action.setShortcut(
+        self.new_folder_action.setShortcut(
             "Ctrl+Shift+N"
         )
-        new_folder_action.triggered.connect(
+        self.new_folder_action.triggered.connect(
             lambda: self._create_new_folder()
         )
 
-        open_workspace_action = QAction(
+        self.open_workspace_action = QAction(
             "Open Workspace Folder...",
             self,
         )
-        open_workspace_action.setShortcut(
+        self.open_workspace_action.setShortcut(
             "Ctrl+O"
         )
-        open_workspace_action.triggered.connect(
+        self.open_workspace_action.triggered.connect(
             self._open_workspace
         )
 
-        save_action = QAction(
+        self.save_action = QAction(
             "Save",
             self,
         )
-        save_action.setShortcut(
+        self.save_action.setShortcut(
             QKeySequence.StandardKey.Save
         )
-        save_action.triggered.connect(
+        self.save_action.triggered.connect(
             self._save_current_file
         )
 
         file_menu.addAction(
-            new_file_action
+            self.new_file_action
         )
         file_menu.addAction(
-            new_folder_action
-        )
-        file_menu.addSeparator()
-        file_menu.addAction(
-            open_workspace_action
+            self.new_folder_action
         )
         file_menu.addSeparator()
         file_menu.addAction(
-            save_action
+            self.open_workspace_action
+        )
+        file_menu.addSeparator()
+        file_menu.addAction(
+            self.save_action
         )
 
         project_menu = self.menuBar().addMenu(
@@ -169,15 +211,82 @@ class MainWindow(QMainWindow):
             "Configure Project...",
             self,
         )
-        self.configure_project_action.setEnabled(
-            self.workspace_path is not None
-        )
         self.configure_project_action.triggered.connect(
             self._configure_project
         )
 
+        self.close_project_action = QAction(
+            "Close Project",
+            self,
+        )
+        self.close_project_action.triggered.connect(
+            self._close_project
+        )
+
         project_menu.addAction(
             self.configure_project_action
+        )
+        project_menu.addAction(
+            self.close_project_action
+        )
+
+    def _load_project_registry_state(self) -> None:
+        try:
+            self.project_registry = load_project_registry(
+                self.project_registry_path
+            )
+        except (ProjectRegistryError, OSError) as error:
+            self.project_registry = ProjectRegistry()
+            self.project_registry_load_error = str(error)
+
+            QMessageBox.warning(
+                self,
+                "Unable to Load Project Registry",
+                (
+                    "The Project Registry could not be loaded. "
+                    "AI Project Organizer can still be used, but "
+                    "previously known Projects cannot currently be "
+                    "displayed or updated."
+                    f"\n\n{error}"
+                ),
+            )
+        else:
+            self.project_registry_load_error = None
+
+        self._refresh_welcome_projects()
+
+    def _refresh_welcome_projects(self) -> None:
+        entries: list[ProjectBrowserEntry] = []
+
+        for registered_project in self.project_registry.projects:
+            workspace_path = registered_project.workspace_path
+            available = workspace_path.is_dir()
+            display_name = (
+                workspace_path.name
+                or str(workspace_path)
+            )
+
+            if available:
+                try:
+                    metadata = load_project_metadata(
+                        workspace_path
+                    )
+                except (ProjectMetadataError, OSError):
+                    metadata = None
+
+                if metadata is not None:
+                    display_name = metadata.name
+
+            entries.append(
+                ProjectBrowserEntry(
+                    display_name=display_name,
+                    workspace_path=workspace_path,
+                    available=available,
+                )
+            )
+
+        self.welcome_page.set_projects(
+            entries
         )
 
     def _open_workspace(self) -> None:
@@ -198,9 +307,83 @@ class MainWindow(QMainWindow):
         if not selected_path:
             return
 
-        self._set_workspace_root(
+        self._activate_workspace(
             selected_path
         )
+
+    def _open_registered_project(
+            self,
+            path: str,
+    ) -> None:
+        if not self._activate_workspace(path):
+            self._refresh_welcome_projects()
+
+    def _activate_workspace(
+            self,
+            path: str | Path,
+    ) -> bool:
+        workspace = Path(
+            path
+        ).expanduser().absolute()
+
+        if not workspace.exists():
+            QMessageBox.warning(
+                self,
+                "Project Unavailable",
+                (
+                    "The selected Project workspace no longer exists:"
+                    f"\n\n{workspace}"
+                ),
+            )
+            return False
+
+        if not workspace.is_dir():
+            QMessageBox.warning(
+                self,
+                "Project Unavailable",
+                (
+                    "The selected Project workspace is not a directory:"
+                    f"\n\n{workspace}"
+                ),
+            )
+            return False
+
+        self._set_workspace_root(
+            str(workspace)
+        )
+        self._record_workspace_opened(
+            workspace
+        )
+
+        return True
+
+    def _record_workspace_opened(
+            self,
+            workspace_path: Path,
+    ) -> None:
+        if self.project_registry_load_error is not None:
+            return
+
+        try:
+            self.project_registry.register(
+                workspace_path
+            )
+            save_project_registry(
+                self.project_registry,
+                self.project_registry_path,
+            )
+        except (ProjectRegistryError, OSError) as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Save Project Registry",
+                (
+                    "The workspace was opened, but its recent Project "
+                    "information could not be saved."
+                    f"\n\n{error}"
+                ),
+            )
+
+        self._refresh_welcome_projects()
 
     def _set_workspace_root(
             self,
@@ -210,9 +393,6 @@ class MainWindow(QMainWindow):
         self.current_file_path = None
         self.project_metadata = None
         self.project_metadata_load_error = None
-        self.configure_project_action.setEnabled(
-            True
-        )
 
         self.file_tree.set_workspace_path(
             path
@@ -231,7 +411,49 @@ class MainWindow(QMainWindow):
         )
 
         self._load_workspace_project_metadata()
+        self.central_stack.setCurrentWidget(
+            self.workspace_page
+        )
         self._update_window_title()
+        self._update_action_states()
+
+    def _clear_workspace(self) -> None:
+        self.workspace_path = None
+        self.current_file_path = None
+        self.project_metadata = None
+        self.project_metadata_load_error = None
+
+        self.file_tree.set_workspace_path(
+            None
+        )
+        self.file_tree.clearSelection()
+        self.file_tree.setCurrentIndex(
+            QModelIndex()
+        )
+        self.file_tree.setRootIndex(
+            QModelIndex()
+        )
+
+        self.text_editor.clear()
+        self.text_editor.document().setModified(
+            False
+        )
+
+        self._refresh_welcome_projects()
+        self.central_stack.setCurrentWidget(
+            self.welcome_page
+        )
+        self._update_window_title()
+        self._update_action_states()
+
+    def _close_project(self) -> None:
+        if self.workspace_path is None:
+            return
+
+        if not self._confirm_discard_unsaved_changes():
+            return
+
+        self._clear_workspace()
 
     def _load_workspace_project_metadata(self) -> None:
         self.project_metadata = None
@@ -542,6 +764,7 @@ class MainWindow(QMainWindow):
         )
 
         self._update_window_title()
+        self._update_action_states()
 
     def _save_current_file(self) -> bool:
         if self.current_file_path is None:
@@ -658,6 +881,7 @@ class MainWindow(QMainWindow):
         self.text_editor.setFocus()
 
         self._update_window_title()
+        self._update_action_states()
 
     def _create_new_folder(
             self,
@@ -877,7 +1101,6 @@ class MainWindow(QMainWindow):
                 shutil.rmtree(path)
             else:
                 path.unlink()
-
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -898,6 +1121,7 @@ class MainWindow(QMainWindow):
             )
 
             self._update_window_title()
+            self._update_action_states()
 
     def _get_creation_directory(
             self,
@@ -1122,6 +1346,29 @@ class MainWindow(QMainWindow):
             return True
 
         return False
+
+    def _update_action_states(self) -> None:
+        has_workspace = self.workspace_path is not None
+        has_document = self.current_file_path is not None
+
+        self.new_file_action.setEnabled(
+            has_workspace
+        )
+        self.new_folder_action.setEnabled(
+            has_workspace
+        )
+        self.open_workspace_action.setEnabled(
+            True
+        )
+        self.save_action.setEnabled(
+            has_document
+        )
+        self.configure_project_action.setEnabled(
+            has_workspace
+        )
+        self.close_project_action.setEnabled(
+            has_workspace
+        )
 
     def _update_window_title(
             self,

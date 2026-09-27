@@ -44,8 +44,12 @@ class FileTreeView(QTreeView):
             Qt.DropAction.MoveAction
         )
 
-    def set_workspace_path(self, path: str) -> None:
-        self.workspace_path = Path(path)
+    def set_workspace_path(self, path: str | None) -> None:
+        self.workspace_path = (
+            Path(path)
+            if path is not None
+            else None
+        )
 
     def _show_context_menu(self, position: QPoint) -> None:
         target_directory = self._directory_at_position(

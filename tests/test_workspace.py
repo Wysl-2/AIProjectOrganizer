@@ -23,10 +23,18 @@ class WorkspaceProjectIntegrationTests(unittest.TestCase):
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self) -> None:
-        self.window = MainWindow()
+        self.registry_directory = tempfile.TemporaryDirectory()
+        self.registry_path = (
+            Path(self.registry_directory.name)
+            / "projects.json"
+        )
+        self.window = MainWindow(
+            project_registry_path=self.registry_path
+        )
 
     def tearDown(self) -> None:
         self.window.close()
+        self.registry_directory.cleanup()
 
     def _metadata(self, root: Path) -> ProjectMetadata:
         working_directory = root / "development" / "WorldMeshes"
