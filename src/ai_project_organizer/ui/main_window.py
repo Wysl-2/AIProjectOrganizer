@@ -4,6 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import QDir, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QFileSystemModel,
     QInputDialog,
@@ -14,11 +15,16 @@ from PySide6.QtWidgets import (
 )
 
 from ai_project_organizer.project import (
+    PROJECT_METADATA_FILENAME,
     ProjectMetadata,
     ProjectMetadataError,
     load_project_metadata,
+    save_project_metadata,
 )
 from ai_project_organizer.ui.file_tree import FileTreeView
+from ai_project_organizer.ui.project_settings_dialog import (
+    ProjectSettingsDialog,
+)
 from ai_project_organizer.ui.text_editor import TextEditor
 
 
@@ -155,6 +161,25 @@ class MainWindow(QMainWindow):
             save_action
         )
 
+        project_menu = self.menuBar().addMenu(
+            "&Project"
+        )
+
+        self.configure_project_action = QAction(
+            "Configure Project...",
+            self,
+        )
+        self.configure_project_action.setEnabled(
+            self.workspace_path is not None
+        )
+        self.configure_project_action.triggered.connect(
+            self._configure_project
+        )
+
+        project_menu.addAction(
+            self.configure_project_action
+        )
+
     def _open_workspace(self) -> None:
         if not self._confirm_discard_unsaved_changes():
             return
@@ -185,6 +210,9 @@ class MainWindow(QMainWindow):
         self.current_file_path = None
         self.project_metadata = None
         self.project_metadata_load_error = None
+        self.configure_project_action.setEnabled(
+            True
+        )
 
         self.file_tree.set_workspace_path(
             path
@@ -228,6 +256,239 @@ class MainWindow(QMainWindow):
                     f"\n\n{error}"
                 ),
             )
+
+    def _configure_project(self) -> None:
+        if self.workspace_path is None:
+            return
+
+        if not self._prepare_project_metadata_document_for_configuration():
+            return
+
+        dialog = ProjectSettingsDialog(
+            workspace_path=self.workspace_path,
+            metadata=self.project_metadata,
+            parent=self,
+        )
+
+        while True:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            metadata = dialog.project_metadata()
+
+            if (
+                    self.project_metadata_load_error is not None
+                    and not self._confirm_replace_invalid_project_metadata()
+            ):
+                continue
+
+            if self._save_project_configuration(metadata):
+                return
+
+    def _prepare_project_metadata_document_for_configuration(
+            self,
+    ) -> bool:
+        if not self._is_project_metadata_document_open():
+            return True
+
+        if not self.text_editor.document().isModified():
+            return True
+
+        file_name = Path(
+            self.current_file_path
+        ).name
+
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle(
+            "Unsaved Changes"
+        )
+        message_box.setIcon(
+            QMessageBox.Icon.Warning
+        )
+        message_box.setText(
+            f"{file_name} has unsaved changes."
+        )
+        message_box.setInformativeText(
+            "Do you want to save your changes?"
+        )
+        message_box.setStandardButtons(
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel
+        )
+        message_box.setDefaultButton(
+            QMessageBox.StandardButton.Save
+        )
+
+        result = message_box.exec()
+
+        if result == QMessageBox.StandardButton.Save:
+            metadata_path = self._project_metadata_path()
+
+            if (
+                    metadata_path is not None
+                    and metadata_path.is_symlink()
+            ):
+                QMessageBox.warning(
+                    self,
+                    "Unable to Save Project Metadata",
+                    (
+                        "The Project metadata file is a symbolic link "
+                        "and cannot be saved through Project "
+                        "configuration."
+                    ),
+                )
+                return False
+
+            if not self._save_current_file():
+                return False
+
+            self._load_workspace_project_metadata()
+            return True
+
+        if result == QMessageBox.StandardButton.Discard:
+            return self._reload_open_project_metadata_document(
+                "Unable to Reload Project Metadata",
+                (
+                    "The on-disk Project metadata could not "
+                    "be reloaded."
+                ),
+            )
+
+        return False
+
+    def _confirm_replace_invalid_project_metadata(
+            self,
+    ) -> bool:
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle(
+            "Replace Project Metadata"
+        )
+        message_box.setIcon(
+            QMessageBox.Icon.Warning
+        )
+        message_box.setText(
+            "The existing Project metadata could not be loaded."
+        )
+        message_box.setInformativeText(
+            (
+                "Saving this configuration will replace "
+                f"{PROJECT_METADATA_FILENAME}. Any unsupported or "
+                "invalid values in the existing file will not be "
+                "preserved."
+            )
+        )
+        message_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+        )
+        message_box.setDefaultButton(
+            QMessageBox.StandardButton.No
+        )
+
+        return (
+            message_box.exec()
+            == QMessageBox.StandardButton.Yes
+        )
+
+    def _save_project_configuration(
+            self,
+            metadata: ProjectMetadata,
+    ) -> bool:
+        if self.workspace_path is None:
+            return False
+
+        try:
+            save_project_metadata(
+                self.workspace_path,
+                metadata,
+            )
+        except (ProjectMetadataError, OSError) as error:
+            QMessageBox.critical(
+                self,
+                "Unable to Save Project Configuration",
+                (
+                    "Could not save the Project configuration:"
+                    f"\n\n{error}"
+                ),
+            )
+            return False
+
+        self.project_metadata = metadata
+        self.project_metadata_load_error = None
+
+        if self._is_project_metadata_document_open():
+            self._reload_open_project_metadata_document(
+                "Project Configuration Saved",
+                (
+                    "Project settings were saved, but the open "
+                    "metadata document could not be refreshed."
+                ),
+            )
+
+        return True
+
+    def _project_metadata_path(self) -> Path | None:
+        if self.workspace_path is None:
+            return None
+
+        return (
+            Path(self.workspace_path)
+            / PROJECT_METADATA_FILENAME
+        )
+
+    def _is_project_metadata_document_open(self) -> bool:
+        if self.current_file_path is None:
+            return False
+
+        metadata_path = self._project_metadata_path()
+
+        if metadata_path is None:
+            return False
+
+        return (
+            Path(self.current_file_path)
+            .expanduser()
+            .absolute()
+            == metadata_path
+            .expanduser()
+            .absolute()
+        )
+
+    def _reload_open_project_metadata_document(
+            self,
+            error_title: str,
+            error_message: str,
+    ) -> bool:
+        if not self._is_project_metadata_document_open():
+            return True
+
+        metadata_path = self._project_metadata_path()
+
+        if metadata_path is None:
+            return False
+
+        try:
+            text = metadata_path.read_text(
+                encoding="utf-8"
+            )
+        except (UnicodeDecodeError, OSError) as error:
+            QMessageBox.warning(
+                self,
+                error_title,
+                f"{error_message}\n\n{error}",
+            )
+            return False
+
+        self.text_editor.setPlainText(
+            text
+        )
+        self.text_editor.document().setModified(
+            False
+        )
+        self._update_window_title()
+
+        return True
 
     def _open_file_from_tree(
             self,
