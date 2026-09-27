@@ -2,12 +2,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -22,8 +23,10 @@ class ProjectBrowserEntry:
 
 
 class WelcomePage(QWidget):
+    create_project_requested = Signal()
     open_existing_requested = Signal()
     project_open_requested = Signal(str)
+    project_remove_requested = Signal(str)
 
     def __init__(
             self,
@@ -54,8 +57,8 @@ class WelcomePage(QWidget):
         self.create_project_button = QPushButton(
             "Create New Project"
         )
-        self.create_project_button.setEnabled(
-            False
+        self.create_project_button.clicked.connect(
+            self.create_project_requested.emit
         )
 
         self.open_existing_button = QPushButton(
@@ -99,7 +102,13 @@ class WelcomePage(QWidget):
 
         self.project_list = QListWidget()
         self.project_list.itemActivated.connect(
-            self._open_project_item
+            self._emit_project_open
+        )
+        self.project_list.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.project_list.customContextMenuRequested.connect(
+            self._show_project_menu
         )
         layout.addWidget(
             self.project_list,
@@ -150,17 +159,83 @@ class WelcomePage(QWidget):
             has_projects
         )
 
-    def _open_project_item(
+    def _show_project_menu(
+            self,
+            position: QPoint,
+    ) -> None:
+        item = self.project_list.itemAt(
+            position
+        )
+
+        if item is None:
+            return
+
+        self.project_list.setCurrentItem(
+            item
+        )
+
+        menu = QMenu(self)
+        open_action = menu.addAction(
+            "Open Project"
+        )
+        remove_action = menu.addAction(
+            "Remove from Projects"
+        )
+
+        selected_action = menu.exec(
+            self.project_list.viewport().mapToGlobal(
+                position
+            )
+        )
+
+        if selected_action == open_action:
+            self._emit_project_open(
+                item
+            )
+        elif selected_action == remove_action:
+            self._emit_project_remove(
+                item
+            )
+
+    def _workspace_path_for_item(
             self,
             item: QListWidgetItem,
-    ) -> None:
+    ) -> str | None:
         workspace_path = item.data(
             Qt.ItemDataRole.UserRole
         )
 
         if not isinstance(workspace_path, str):
+            return None
+
+        return workspace_path
+
+    def _emit_project_open(
+            self,
+            item: QListWidgetItem,
+    ) -> None:
+        workspace_path = self._workspace_path_for_item(
+            item
+        )
+
+        if workspace_path is None:
             return
 
         self.project_open_requested.emit(
+            workspace_path
+        )
+
+    def _emit_project_remove(
+            self,
+            item: QListWidgetItem,
+    ) -> None:
+        workspace_path = self._workspace_path_for_item(
+            item
+        )
+
+        if workspace_path is None:
+            return
+
+        self.project_remove_requested.emit(
             workspace_path
         )

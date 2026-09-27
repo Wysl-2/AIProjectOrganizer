@@ -160,10 +160,77 @@ class WelcomePageTests(unittest.TestCase):
                 [str(workspace)],
             )
 
-    def test_create_project_is_reserved_for_later_workflow(self) -> None:
-        self.assertFalse(
-            self.page.create_project_button.isEnabled()
+    def test_create_project_button_emits_signal(self) -> None:
+        emissions: list[bool] = []
+        self.page.create_project_requested.connect(
+            lambda: emissions.append(True)
         )
+
+        self.page.create_project_button.click()
+
+        self.assertEqual(
+            emissions,
+            [True],
+        )
+
+    def test_project_removal_emits_workspace_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = (
+                Path(temporary_directory)
+                / "workspace"
+            )
+            self.page.set_projects(
+                (
+                    ProjectBrowserEntry(
+                        "Project",
+                        workspace,
+                        True,
+                    ),
+                )
+            )
+            emissions: list[str] = []
+            self.page.project_remove_requested.connect(
+                emissions.append
+            )
+
+            item = self.page.project_list.item(0)
+            self.page._emit_project_remove(
+                item
+            )
+
+            self.assertEqual(
+                emissions,
+                [str(workspace)],
+            )
+
+    def test_unavailable_project_can_request_removal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = (
+                Path(temporary_directory)
+                / "missing"
+            )
+            self.page.set_projects(
+                (
+                    ProjectBrowserEntry(
+                        "Missing",
+                        workspace,
+                        False,
+                    ),
+                )
+            )
+            emissions: list[str] = []
+            self.page.project_remove_requested.connect(
+                emissions.append
+            )
+
+            self.page._emit_project_remove(
+                self.page.project_list.item(0)
+            )
+
+            self.assertEqual(
+                emissions,
+                [str(workspace)],
+            )
 
 
 if __name__ == "__main__":

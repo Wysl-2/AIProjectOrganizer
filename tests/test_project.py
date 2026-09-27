@@ -2,12 +2,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ai_project_organizer.project import (
     PROJECT_METADATA_FILENAME,
     PROJECT_METADATA_SCHEMA_VERSION,
     ProjectMetadata,
     ProjectMetadataError,
+    create_project_workspace,
     load_project_metadata,
     save_project_metadata,
 )
@@ -301,6 +303,127 @@ class ProjectMetadataTests(unittest.TestCase):
             self.assertEqual(
                 target.read_text(encoding="utf-8"),
                 "unchanged",
+            )
+
+
+    def test_create_project_workspace_creates_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = root / "CreatedProject"
+            metadata = self._metadata()
+
+            created = create_project_workspace(
+                workspace,
+                metadata,
+            )
+
+            self.assertEqual(
+                created,
+                workspace,
+            )
+            self.assertTrue(
+                workspace.is_dir()
+            )
+            self.assertEqual(
+                load_project_metadata(workspace),
+                metadata,
+            )
+
+    def test_create_project_workspace_rejects_existing_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory) / "existing"
+            workspace.mkdir()
+
+            with self.assertRaises(FileExistsError):
+                create_project_workspace(
+                    workspace,
+                    self._metadata(),
+                )
+
+    def test_create_project_workspace_requires_existing_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = (
+                Path(temporary_directory)
+                / "missing"
+                / "project"
+            )
+
+            with self.assertRaises(FileNotFoundError):
+                create_project_workspace(
+                    workspace,
+                    self._metadata(),
+                )
+
+    def test_create_project_workspace_requires_directory_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            parent = root / "parent"
+            parent.write_text(
+                "file",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(NotADirectoryError):
+                create_project_workspace(
+                    parent / "project",
+                    self._metadata(),
+                )
+
+    def test_create_project_workspace_rejects_relative_path(self) -> None:
+        with self.assertRaises(ProjectMetadataError):
+            create_project_workspace(
+                Path("relative/project"),
+                self._metadata(),
+            )
+
+    def test_failed_initial_metadata_save_removes_empty_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory) / "project"
+
+            with patch(
+                "ai_project_organizer.project.save_project_metadata",
+                side_effect=PermissionError("permission denied"),
+            ):
+                with self.assertRaises(PermissionError):
+                    create_project_workspace(
+                        workspace,
+                        self._metadata(),
+                    )
+
+            self.assertFalse(
+                workspace.exists()
+            )
+
+    def test_failed_initial_metadata_save_never_recursively_deletes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory) / "project"
+
+            def fail_after_writing(
+                    created_workspace: Path,
+                    _metadata: ProjectMetadata,
+            ) -> None:
+                (created_workspace / "marker.txt").write_text(
+                    "preserve",
+                    encoding="utf-8",
+                )
+                raise PermissionError("permission denied")
+
+            with patch(
+                "ai_project_organizer.project.save_project_metadata",
+                side_effect=fail_after_writing,
+            ):
+                with self.assertRaises(PermissionError):
+                    create_project_workspace(
+                        workspace,
+                        self._metadata(),
+                    )
+
+            self.assertTrue(
+                workspace.is_dir()
+            )
+            self.assertEqual(
+                (workspace / "marker.txt").read_text(encoding="utf-8"),
+                "preserve",
             )
 
 

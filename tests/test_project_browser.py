@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from ai_project_organizer.project import (
     ProjectMetadata,
@@ -279,6 +279,9 @@ class ProjectBrowserIntegrationTests(unittest.TestCase):
         self.assertTrue(
             self.window.open_workspace_action.isEnabled()
         )
+        self.assertTrue(
+            self.window.new_project_action.isEnabled()
+        )
         self.assertFalse(
             self.window.save_action.isEnabled()
         )
@@ -300,6 +303,9 @@ class ProjectBrowserIntegrationTests(unittest.TestCase):
         )
         self.assertTrue(
             self.window.new_folder_action.isEnabled()
+        )
+        self.assertTrue(
+            self.window.new_project_action.isEnabled()
         )
         self.assertFalse(
             self.window.save_action.isEnabled()
@@ -402,6 +408,208 @@ class ProjectBrowserIntegrationTests(unittest.TestCase):
         self.assertTrue(
             self.window.project_registry.contains(
                 missing
+            )
+        )
+
+    def test_create_project_uses_normal_activation_and_registry_flow(self) -> None:
+        workspace = self.root / "CreatedProject"
+        metadata = ProjectMetadata(
+            name="CreatedProject",
+            working_directory=self.root / "development" / "CreatedProject",
+            local_git_repository=self.root / "repositories" / "CreatedProject",
+            github_repository="Wysl-2/CreatedProject",
+        )
+
+        with patch(
+            "ai_project_organizer.ui.main_window.NewProjectDialog"
+        ) as dialog_class:
+            dialog = dialog_class.return_value
+            dialog.exec.return_value = QDialog.DialogCode.Accepted
+            dialog.project_metadata.return_value = metadata
+            dialog.workspace_path.return_value = workspace
+
+            self.window._create_project()
+
+        self.assertEqual(
+            self.window.workspace_path,
+            str(workspace),
+        )
+        self.assertEqual(
+            self.window.project_metadata,
+            metadata,
+        )
+        self.assertTrue(
+            load_project_registry(
+                self.registry_path
+            ).contains(workspace)
+        )
+
+    def test_failed_project_creation_does_not_activate_or_register(self) -> None:
+        workspace = self.root / "FailedProject"
+        metadata = ProjectMetadata(
+            name="FailedProject",
+            working_directory=self.root / "development" / "FailedProject",
+            local_git_repository=self.root / "repositories" / "FailedProject",
+            github_repository="Wysl-2/FailedProject",
+        )
+
+        with (
+            patch(
+                "ai_project_organizer.ui.main_window.NewProjectDialog"
+            ) as dialog_class,
+            patch(
+                "ai_project_organizer.ui.main_window.create_project_workspace",
+                side_effect=PermissionError("permission denied"),
+            ),
+            patch.object(
+                QMessageBox,
+                "critical",
+            ) as critical,
+        ):
+            dialog = dialog_class.return_value
+            dialog.exec.return_value = QDialog.DialogCode.Accepted
+            dialog.project_metadata.return_value = metadata
+            dialog.workspace_path.return_value = workspace
+
+            self.window._create_project()
+
+        self.assertIsNone(
+            self.window.workspace_path
+        )
+        self.assertFalse(
+            self.window.project_registry.contains(
+                workspace
+            )
+        )
+        critical.assert_called_once()
+
+    def test_remove_registered_project_preserves_workspace(self) -> None:
+        workspace = self.root / "workspace"
+        workspace.mkdir()
+        marker = workspace / "marker.txt"
+        marker.write_text(
+            "unchanged",
+            encoding="utf-8",
+        )
+        self.window._activate_workspace(
+            workspace
+        )
+        self.window._close_project()
+
+        with patch.object(
+            QMessageBox,
+            "exec",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            self.window._remove_registered_project(
+                str(workspace)
+            )
+
+        self.assertFalse(
+            self.window.project_registry.contains(
+                workspace
+            )
+        )
+        self.assertFalse(
+            load_project_registry(
+                self.registry_path
+            ).contains(workspace)
+        )
+        self.assertEqual(
+            marker.read_text(encoding="utf-8"),
+            "unchanged",
+        )
+
+    def test_unavailable_project_can_be_removed(self) -> None:
+        missing = self.root / "missing"
+        self.window.project_registry.register(
+            missing
+        )
+        save_project_registry(
+            self.window.project_registry,
+            self.registry_path,
+        )
+
+        with patch.object(
+            QMessageBox,
+            "exec",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            self.window._remove_registered_project(
+                str(missing)
+            )
+
+        self.assertFalse(
+            self.window.project_registry.contains(
+                missing
+            )
+        )
+
+    def test_registry_save_failure_preserves_removed_entry(self) -> None:
+        workspace = self.root / "workspace"
+        workspace.mkdir()
+        self.window.project_registry.register(
+            workspace
+        )
+        save_project_registry(
+            self.window.project_registry,
+            self.registry_path,
+        )
+
+        with (
+            patch.object(
+                QMessageBox,
+                "exec",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch(
+                "ai_project_organizer.ui.main_window.save_project_registry",
+                side_effect=PermissionError("permission denied"),
+            ),
+            patch.object(
+                QMessageBox,
+                "warning",
+            ) as warning,
+        ):
+            self.window._remove_registered_project(
+                str(workspace)
+            )
+
+        self.assertTrue(
+            self.window.project_registry.contains(
+                workspace
+            )
+        )
+        self.assertTrue(
+            load_project_registry(
+                self.registry_path
+            ).contains(workspace)
+        )
+        warning.assert_called_once()
+
+    def test_registry_removal_can_be_cancelled(self) -> None:
+        workspace = self.root / "workspace"
+        workspace.mkdir()
+        self.window.project_registry.register(
+            workspace
+        )
+        save_project_registry(
+            self.window.project_registry,
+            self.registry_path,
+        )
+
+        with patch.object(
+            QMessageBox,
+            "exec",
+            return_value=QMessageBox.StandardButton.No,
+        ):
+            self.window._remove_registered_project(
+                str(workspace)
+            )
+
+        self.assertTrue(
+            self.window.project_registry.contains(
+                workspace
             )
         )
 

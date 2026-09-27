@@ -134,6 +134,61 @@ def save_project_metadata(
     return metadata_path
 
 
+def create_project_workspace(
+    workspace_path: str | Path,
+    metadata: ProjectMetadata,
+) -> Path:
+    if not isinstance(metadata, ProjectMetadata):
+        raise TypeError("metadata must be a ProjectMetadata instance")
+
+    if not isinstance(workspace_path, (str, Path)):
+        raise ProjectMetadataError(
+            "Project workspace path must be a filesystem path."
+        )
+
+    workspace = Path(
+        workspace_path
+    ).expanduser()
+
+    if not workspace.is_absolute():
+        raise ProjectMetadataError(
+            "Project workspace path must be an absolute path."
+        )
+
+    if workspace.exists() or workspace.is_symlink():
+        raise FileExistsError(
+            f"Project workspace already exists: {workspace}"
+        )
+
+    parent = workspace.parent
+
+    if not parent.exists():
+        raise FileNotFoundError(
+            f"Project workspace parent does not exist: {parent}"
+        )
+
+    if not parent.is_dir():
+        raise NotADirectoryError(
+            f"Project workspace parent is not a directory: {parent}"
+        )
+
+    workspace.mkdir()
+
+    try:
+        save_project_metadata(
+            workspace,
+            metadata,
+        )
+    except (ProjectMetadataError, OSError):
+        try:
+            workspace.rmdir()
+        except OSError:
+            pass
+        raise
+
+    return workspace
+
+
 def _metadata_path(workspace_path: str | Path) -> Path:
     return Path(workspace_path).expanduser() / PROJECT_METADATA_FILENAME
 

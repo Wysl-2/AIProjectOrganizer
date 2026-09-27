@@ -19,6 +19,7 @@ from ai_project_organizer.project import (
     PROJECT_METADATA_FILENAME,
     ProjectMetadata,
     ProjectMetadataError,
+    create_project_workspace,
     load_project_metadata,
     save_project_metadata,
 )
@@ -29,6 +30,7 @@ from ai_project_organizer.project_registry import (
     save_project_registry,
 )
 from ai_project_organizer.ui.file_tree import FileTreeView
+from ai_project_organizer.ui.new_project_dialog import NewProjectDialog
 from ai_project_organizer.ui.project_settings_dialog import (
     ProjectSettingsDialog,
 )
@@ -67,11 +69,17 @@ class MainWindow(QMainWindow):
         self.central_stack = QStackedWidget()
 
         self.welcome_page = WelcomePage()
+        self.welcome_page.create_project_requested.connect(
+            self._create_project
+        )
         self.welcome_page.open_existing_requested.connect(
             self._open_workspace
         )
         self.welcome_page.project_open_requested.connect(
             self._open_registered_project
+        )
+        self.welcome_page.project_remove_requested.connect(
+            self._remove_registered_project
         )
 
         self.file_model = QFileSystemModel(self)
@@ -207,6 +215,14 @@ class MainWindow(QMainWindow):
             "&Project"
         )
 
+        self.new_project_action = QAction(
+            "New Project...",
+            self,
+        )
+        self.new_project_action.triggered.connect(
+            self._create_project
+        )
+
         self.configure_project_action = QAction(
             "Configure Project...",
             self,
@@ -223,6 +239,10 @@ class MainWindow(QMainWindow):
             self._close_project
         )
 
+        project_menu.addAction(
+            self.new_project_action
+        )
+        project_menu.addSeparator()
         project_menu.addAction(
             self.configure_project_action
         )
@@ -317,6 +337,143 @@ class MainWindow(QMainWindow):
     ) -> None:
         if not self._activate_workspace(path):
             self._refresh_welcome_projects()
+
+    def _create_project(self) -> None:
+        dialog = NewProjectDialog(
+            parent=self,
+        )
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        try:
+            metadata = dialog.project_metadata()
+            workspace_path = dialog.workspace_path()
+        except (ProjectMetadataError, OSError, ValueError) as error:
+            QMessageBox.warning(
+                self,
+                "Invalid Project Configuration",
+                str(error),
+            )
+            return
+
+        if not self._confirm_discard_unsaved_changes():
+            return
+
+        try:
+            created_workspace = create_project_workspace(
+                workspace_path,
+                metadata,
+            )
+        except (ProjectMetadataError, OSError) as error:
+            message = (
+                "Could not create the Project:"
+                f"\n\n{error}"
+            )
+
+            if workspace_path.exists() or workspace_path.is_symlink():
+                message += (
+                    "\n\nThe intended workspace path now exists. "
+                    "Review it before trying again."
+                )
+
+            QMessageBox.critical(
+                self,
+                "Unable to Create Project",
+                message,
+            )
+            return
+
+        self._activate_workspace(
+            created_workspace
+        )
+
+    def _remove_registered_project(
+            self,
+            path: str,
+    ) -> None:
+        if self.project_registry_load_error is not None:
+            QMessageBox.warning(
+                self,
+                "Unable to Update Project Registry",
+                (
+                    "Project Registry changes are unavailable for "
+                    "this application session because the registry "
+                    "could not be loaded safely."
+                ),
+            )
+            return
+
+        workspace_path = Path(
+            path
+        ).expanduser().absolute()
+
+        if not self.project_registry.contains(
+                workspace_path
+        ):
+            self._refresh_welcome_projects()
+            return
+
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle(
+            "Remove Project"
+        )
+        message_box.setIcon(
+            QMessageBox.Icon.Warning
+        )
+        message_box.setText(
+            "Remove this Project from the Projects list?"
+        )
+        message_box.setInformativeText(
+            (
+                "The workspace directory and its files will not "
+                "be deleted."
+                f"\n\n{workspace_path}"
+            )
+        )
+        message_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+        )
+        message_box.setDefaultButton(
+            QMessageBox.StandardButton.No
+        )
+
+        if (
+                message_box.exec()
+                != QMessageBox.StandardButton.Yes
+        ):
+            return
+
+        updated_registry = ProjectRegistry(
+            self.project_registry.projects
+        )
+
+        if not updated_registry.remove(
+                workspace_path
+        ):
+            self._refresh_welcome_projects()
+            return
+
+        try:
+            save_project_registry(
+                updated_registry,
+                self.project_registry_path,
+            )
+        except (ProjectRegistryError, OSError) as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Update Project Registry",
+                (
+                    "The Project could not be removed from the "
+                    "Projects list."
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        self.project_registry = updated_registry
+        self._refresh_welcome_projects()
 
     def _activate_workspace(
             self,
@@ -1358,6 +1515,9 @@ class MainWindow(QMainWindow):
             has_workspace
         )
         self.open_workspace_action.setEnabled(
+            True
+        )
+        self.new_project_action.setEnabled(
             True
         )
         self.save_action.setEnabled(
