@@ -5,12 +5,13 @@ from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QFileSystemModel,
+    QInputDialog,
     QMainWindow,
     QMessageBox,
     QSplitter,
-    QTreeView,
 )
 
+from ai_project_organizer.ui.file_tree import FileTreeView
 from ai_project_organizer.ui.text_editor import TextEditor
 
 
@@ -36,7 +37,7 @@ class MainWindow(QMainWindow):
         root_path = QDir.homePath()
         self.file_model.setRootPath(root_path)
 
-        self.file_tree = QTreeView()
+        self.file_tree = FileTreeView()
         self.file_tree.setModel(self.file_model)
         self.file_tree.setRootIndex(
             self.file_model.index(root_path)
@@ -44,6 +45,22 @@ class MainWindow(QMainWindow):
 
         self.file_tree.doubleClicked.connect(
             self._open_file_from_tree
+        )
+
+        self.file_tree.new_file_requested.connect(
+            self._create_new_file
+        )
+
+        self.file_tree.new_folder_requested.connect(
+            self._create_new_folder
+        )
+
+        self.file_tree.paths_moved.connect(
+            self._handle_paths_moved
+        )
+
+        self.file_tree.move_failed.connect(
+            self._show_move_error
         )
 
         self.text_editor = TextEditor()
@@ -62,6 +79,26 @@ class MainWindow(QMainWindow):
     def _setup_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
 
+        new_file_action = QAction(
+            "New File...",
+            self,
+        )
+        new_file_action.setShortcut(
+            QKeySequence.StandardKey.New
+        )
+        new_file_action.triggered.connect(
+            lambda: self._create_new_file()
+        )
+
+        new_folder_action = QAction(
+            "New Folder...",
+            self,
+        )
+        new_folder_action.setShortcut("Ctrl+Shift+N")
+        new_folder_action.triggered.connect(
+            lambda: self._create_new_folder()
+        )
+
         open_workspace_action = QAction(
             "Open Workspace Folder...",
             self,
@@ -75,11 +112,16 @@ class MainWindow(QMainWindow):
             "Save",
             self,
         )
-        save_action.setShortcut(QKeySequence.StandardKey.Save)
+        save_action.setShortcut(
+            QKeySequence.StandardKey.Save
+        )
         save_action.triggered.connect(
             self._save_current_file
         )
 
+        file_menu.addAction(new_file_action)
+        file_menu.addAction(new_folder_action)
+        file_menu.addSeparator()
         file_menu.addAction(open_workspace_action)
         file_menu.addSeparator()
         file_menu.addAction(save_action)
@@ -104,6 +146,8 @@ class MainWindow(QMainWindow):
     def _set_workspace_root(self, path: str) -> None:
         self.workspace_path = path
         self.current_file_path = None
+
+        self.file_tree.set_workspace_path(path)
 
         self.file_model.setRootPath(path)
         self.file_tree.setRootIndex(
@@ -176,6 +220,199 @@ class MainWindow(QMainWindow):
 
         return True
 
+    def _create_new_file(
+            self,
+            target_path: str | None = None,
+    ) -> None:
+        if target_path is not None:
+            target_directory = Path(target_path)
+        else:
+            target_directory = self._get_creation_directory()
+
+        if target_directory is None:
+            return
+
+        file_name, accepted = QInputDialog.getText(
+            self,
+            "New File",
+            "File name:",
+        )
+
+        if not accepted:
+            return
+
+        file_name = file_name.strip()
+
+        if not self._is_valid_item_name(file_name):
+            QMessageBox.warning(
+                self,
+                "Invalid File Name",
+                "Enter a valid file name without path separators.",
+            )
+            return
+
+        new_file_path = target_directory / file_name
+
+        if new_file_path.exists():
+            QMessageBox.warning(
+                self,
+                "File Already Exists",
+                (
+                    f"A file or folder named "
+                    f"'{file_name}' already exists."
+                ),
+            )
+            return
+
+        if not self._confirm_discard_unsaved_changes():
+            return
+
+        try:
+            new_file_path.write_text(
+                "",
+                encoding="utf-8",
+            )
+        except OSError as error:
+            QMessageBox.critical(
+                self,
+                "Unable to Create File",
+                f"Could not create the file:\n\n{error}",
+            )
+            return
+
+        self.current_file_path = str(new_file_path)
+
+        self.text_editor.clear()
+        self.text_editor.document().setModified(False)
+        self.text_editor.setFocus()
+
+        self._update_window_title()
+
+    def _create_new_folder(
+            self,
+            target_path: str | None = None,
+    ) -> None:
+        if target_path is not None:
+            target_directory = Path(target_path)
+        else:
+            target_directory = self._get_creation_directory()
+
+        if target_directory is None:
+            return
+
+        folder_name, accepted = QInputDialog.getText(
+            self,
+            "New Folder",
+            "Folder name:",
+        )
+
+        if not accepted:
+            return
+
+        folder_name = folder_name.strip()
+
+        if not self._is_valid_item_name(folder_name):
+            QMessageBox.warning(
+                self,
+                "Invalid Folder Name",
+                "Enter a valid folder name without path separators.",
+            )
+            return
+
+        new_folder_path = target_directory / folder_name
+
+        if new_folder_path.exists():
+            QMessageBox.warning(
+                self,
+                "Folder Already Exists",
+                (
+                    f"A file or folder named "
+                    f"'{folder_name}' already exists."
+                ),
+            )
+            return
+
+        try:
+            new_folder_path.mkdir()
+        except OSError as error:
+            QMessageBox.critical(
+                self,
+                "Unable to Create Folder",
+                f"Could not create the folder:\n\n{error}",
+            )
+
+    def _get_creation_directory(self) -> Path | None:
+        if self.workspace_path is None:
+            QMessageBox.information(
+                self,
+                "No Workspace Open",
+                "Open a workspace before creating files or folders.",
+            )
+            return None
+
+        current_index = self.file_tree.currentIndex()
+
+        if not current_index.isValid():
+            return Path(self.workspace_path)
+
+        selected_path = Path(
+            self.file_model.filePath(current_index)
+        )
+
+        if selected_path.is_dir():
+            return selected_path
+
+        return selected_path.parent
+
+    def _is_valid_item_name(self, name: str) -> bool:
+        if not name:
+            return False
+
+        if name in {".", ".."}:
+            return False
+
+        if "/" in name or "\\" in name:
+            return False
+
+        return True
+
+    def _handle_paths_moved(
+            self,
+            moved_paths: dict[str, str],
+    ) -> None:
+        if self.current_file_path is None:
+            return
+
+        current_path = Path(self.current_file_path)
+
+        for old_path, new_path in moved_paths.items():
+            old_path_obj = Path(old_path)
+            new_path_obj = Path(new_path)
+
+            try:
+                relative_path = current_path.relative_to(
+                    old_path_obj
+                )
+            except ValueError:
+                continue
+
+            self.current_file_path = str(
+                new_path_obj / relative_path
+            )
+
+            self._update_window_title()
+            break
+
+    def _show_move_error(
+            self,
+            message: str,
+    ) -> None:
+        QMessageBox.warning(
+            self,
+            "Unable to Move Item",
+            message,
+        )
+
     def _confirm_discard_unsaved_changes(self) -> bool:
         if not self.text_editor.document().isModified():
             return True
@@ -223,10 +460,14 @@ class MainWindow(QMainWindow):
 
     def _update_window_title(self, *_args) -> None:
         if self.current_file_path is None:
-            self.setWindowTitle("AI Project Organizer")
+            self.setWindowTitle(
+                "AI Project Organizer"
+            )
             return
 
-        file_name = Path(self.current_file_path).name
+        file_name = Path(
+            self.current_file_path
+        ).name
 
         modified_marker = (
             " *"
@@ -235,10 +476,16 @@ class MainWindow(QMainWindow):
         )
 
         self.setWindowTitle(
-            f"{file_name}{modified_marker} - AI Project Organizer"
+            (
+                f"{file_name}{modified_marker} "
+                f"- AI Project Organizer"
+            )
         )
 
-    def closeEvent(self, event: QCloseEvent) -> None:
+    def closeEvent(
+            self,
+            event: QCloseEvent,
+    ) -> None:
         if self._confirm_discard_unsaved_changes():
             event.accept()
         else:
