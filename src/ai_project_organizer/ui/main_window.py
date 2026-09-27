@@ -13,6 +13,11 @@ from PySide6.QtWidgets import (
     QSplitter,
 )
 
+from ai_project_organizer.project import (
+    ProjectMetadata,
+    ProjectMetadataError,
+    load_project_metadata,
+)
 from ai_project_organizer.ui.file_tree import FileTreeView
 from ai_project_organizer.ui.text_editor import TextEditor
 
@@ -26,6 +31,8 @@ class MainWindow(QMainWindow):
 
         self.workspace_path: str | None = None
         self.current_file_path: str | None = None
+        self.project_metadata: ProjectMetadata | None = None
+        self.project_metadata_load_error: str | None = None
 
         self._setup_ui()
         self._setup_menu()
@@ -176,6 +183,8 @@ class MainWindow(QMainWindow):
     ) -> None:
         self.workspace_path = path
         self.current_file_path = None
+        self.project_metadata = None
+        self.project_metadata_load_error = None
 
         self.file_tree.set_workspace_path(
             path
@@ -193,7 +202,32 @@ class MainWindow(QMainWindow):
             False
         )
 
+        self._load_workspace_project_metadata()
         self._update_window_title()
+
+    def _load_workspace_project_metadata(self) -> None:
+        self.project_metadata = None
+        self.project_metadata_load_error = None
+
+        if self.workspace_path is None:
+            return
+
+        try:
+            self.project_metadata = load_project_metadata(
+                self.workspace_path
+            )
+        except (ProjectMetadataError, OSError) as error:
+            self.project_metadata_load_error = str(error)
+
+            QMessageBox.warning(
+                self,
+                "Unable to Load Project Metadata",
+                (
+                    "The workspace was opened, but its Project "
+                    "metadata could not be loaded."
+                    f"\n\n{error}"
+                ),
+            )
 
     def _open_file_from_tree(
             self,
