@@ -7,6 +7,7 @@ from ai_project_organizer.ui.main_window import MainWindow
 
 def main() -> None:
     app = QApplication(sys.argv)
+    app.setApplicationName("AI Project Organizer")
 
     window = MainWindow()
     window.show()
