@@ -91,5 +91,34 @@ class AddPackageDialogTests(unittest.TestCase):
         )
 
 
+    def test_selected_feature_name_is_preselected(self) -> None:
+        dialog = AddPackageDialog(
+            (
+                "Alpha",
+                "Beta",
+            ),
+            selected_feature_name="Beta",
+        )
+
+        self.assertEqual(
+            dialog.feature_name(),
+            "Beta",
+        )
+
+    def test_missing_selected_feature_keeps_normal_selection(self) -> None:
+        dialog = AddPackageDialog(
+            (
+                "Alpha",
+                "Beta",
+            ),
+            selected_feature_name="Missing",
+        )
+
+        self.assertEqual(
+            dialog.feature_name(),
+            "Alpha",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

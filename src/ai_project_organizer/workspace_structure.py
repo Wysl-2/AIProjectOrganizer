@@ -124,6 +124,36 @@ def is_project_feature_structure_initialized(
     )
 
 
+def is_project_package_structure_initialized(
+    workspace_path: str | Path,
+    feature_name: str,
+    package_id: str,
+) -> bool:
+    workspace = _validated_workspace(
+        workspace_path
+    )
+    packages_root = _validated_feature_packages_root(
+        workspace,
+        feature_name,
+    )
+    package = (
+        packages_root
+        / _validated_package_id(package_id)
+    )
+
+    _require_real_directory(
+        package,
+        "Package directory",
+    )
+
+    return _are_standard_directories_initialized(
+        (
+            package_documents_path(package),
+            package_contents_path(package),
+        )
+    )
+
+
 def initialize_project_workspace_structure(
     workspace_path: str | Path,
 ) -> None:

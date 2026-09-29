@@ -19,6 +19,7 @@ from ai_project_organizer.workspace_structure import (
     initialize_project_feature_structure,
     initialize_project_package_structure,
     initialize_project_workspace_structure,
+    is_project_package_structure_initialized,
     is_project_feature_structure_initialized,
     is_project_workspace_structure_initialized,
     package_contents_path,
@@ -1328,6 +1329,62 @@ class WorkspaceStructureTests(unittest.TestCase):
                     / "Broken Package"
                 ).exists()
             )
+
+
+    def test_package_structure_readiness_reports_missing_and_initialized(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(root)
+            feature = create_project_feature(
+                workspace,
+                "Feature",
+            )
+            package = feature / "Packages" / "PKG01"
+            package.mkdir()
+
+            self.assertFalse(
+                is_project_package_structure_initialized(
+                    workspace,
+                    "Feature",
+                    "PKG01",
+                )
+            )
+
+            initialize_project_package_structure(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+
+            self.assertTrue(
+                is_project_package_structure_initialized(
+                    workspace,
+                    "Feature",
+                    "PKG01",
+                )
+            )
+
+    def test_package_structure_readiness_rejects_conflicting_child(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(root)
+            feature = create_project_feature(
+                workspace,
+                "Feature",
+            )
+            package = feature / "Packages" / "PKG01"
+            package.mkdir()
+            (package / "Contents").write_text(
+                "conflict",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(NotADirectoryError):
+                is_project_package_structure_initialized(
+                    workspace,
+                    "Feature",
+                    "PKG01",
+                )
 
 
 if __name__ == "__main__":

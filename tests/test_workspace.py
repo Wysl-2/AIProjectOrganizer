@@ -283,5 +283,36 @@ class WorkspaceProjectIntegrationTests(unittest.TestCase):
             )
 
 
+    def test_workspace_navigation_has_project_and_files_tabs(self) -> None:
+        self.assertEqual(
+            self.window.workspace_navigation_tabs.tabText(0),
+            "Project",
+        )
+        self.assertEqual(
+            self.window.workspace_navigation_tabs.tabText(1),
+            "Files",
+        )
+
+    def test_project_view_is_default_workspace_navigation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            self.window._set_workspace_root(str(workspace))
+
+            self.assertIs(
+                self.window.workspace_navigation_tabs.currentWidget(),
+                self.window.project_view,
+            )
+
+    def test_project_view_clears_when_workspace_is_cleared(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            self.window._set_workspace_root(str(workspace))
+            self.window._clear_workspace()
+
+            self.assertIsNone(
+                self.window.project_view.workspace_path
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

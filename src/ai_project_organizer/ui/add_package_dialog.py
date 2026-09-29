@@ -15,6 +15,7 @@ class AddPackageDialog(QDialog):
     def __init__(
             self,
             feature_names: Sequence[str],
+            selected_feature_name: str | None = None,
             parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -30,6 +31,16 @@ class AddPackageDialog(QDialog):
         self.feature_combo.addItems(
             list(feature_names)
         )
+
+        if (
+                selected_feature_name is not None
+                and self.feature_combo.findText(
+                    selected_feature_name
+                ) >= 0
+        ):
+            self.feature_combo.setCurrentText(
+                selected_feature_name
+            )
 
         self.package_id_edit = QLineEdit(self)
 

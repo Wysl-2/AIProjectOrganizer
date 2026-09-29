@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QSplitter,
     QStackedWidget,
+    QTabWidget,
 )
 
 from ai_project_organizer.project import (
@@ -37,6 +38,7 @@ from ai_project_organizer.ui.new_project_dialog import NewProjectDialog
 from ai_project_organizer.ui.project_settings_dialog import (
     ProjectSettingsDialog,
 )
+from ai_project_organizer.ui.project_view import ProjectView
 from ai_project_organizer.ui.text_editor import TextEditor
 from ai_project_organizer.ui.welcome_page import (
     ProjectBrowserEntry,
@@ -53,6 +55,7 @@ from ai_project_organizer.workspace_structure import (
     create_project_package,
     discover_project_features,
     initialize_project_feature_structure,
+    initialize_project_package_structure,
     initialize_project_workspace_structure,
     is_project_feature_structure_initialized,
     is_project_workspace_structure_initialized,
@@ -142,6 +145,42 @@ class MainWindow(QMainWindow):
             self._show_import_error
         )
 
+        self.project_view = ProjectView()
+        self.project_view.file_open_requested.connect(
+            self._open_file_path
+        )
+        self.project_view.new_document_requested.connect(
+            self._create_new_file
+        )
+        self.project_view.add_feature_requested.connect(
+            self._add_feature
+        )
+        self.project_view.add_package_requested.connect(
+            self._add_package
+        )
+        self.project_view.initialize_project_requested.connect(
+            self._initialize_project_structure_from_view
+        )
+        self.project_view.initialize_feature_requested.connect(
+            self._initialize_feature_structure_from_view
+        )
+        self.project_view.initialize_package_requested.connect(
+            self._initialize_package_structure_from_view
+        )
+
+        self.workspace_navigation_tabs = QTabWidget()
+        self.workspace_navigation_tabs.addTab(
+            self.project_view,
+            "Project",
+        )
+        self.workspace_navigation_tabs.addTab(
+            self.file_tree,
+            "Files",
+        )
+        self.workspace_navigation_tabs.currentChanged.connect(
+            self._workspace_navigation_changed
+        )
+
         self.text_editor = TextEditor()
 
         self.text_editor.document().modificationChanged.connect(
@@ -152,7 +191,7 @@ class MainWindow(QMainWindow):
             Qt.Orientation.Horizontal
         )
         self.workspace_page.addWidget(
-            self.file_tree
+            self.workspace_navigation_tabs
         )
         self.workspace_page.addWidget(
             self.text_editor
@@ -479,8 +518,14 @@ class MainWindow(QMainWindow):
                     f"\n\n{error}"
                 ),
             )
+            return
 
-    def _add_package(self) -> None:
+        self.project_view.refresh()
+
+    def _add_package(
+            self,
+            selected_feature_name: str = "",
+    ) -> None:
         if self.workspace_path is None:
             return
 
@@ -510,10 +555,31 @@ class MainWindow(QMainWindow):
             )
             return
 
+        available_feature_names = tuple(
+            feature.name
+            for feature in features
+        )
+
+        if (
+                selected_feature_name
+                and selected_feature_name not in available_feature_names
+        ):
+            QMessageBox.warning(
+                self,
+                "Feature Unavailable",
+                (
+                    "The selected Feature no longer exists. "
+                    "Refresh the Project view and try again."
+                ),
+            )
+            return
+
         dialog = AddPackageDialog(
-            tuple(
-                feature.name
-                for feature in features
+            available_feature_names,
+            selected_feature_name=(
+                selected_feature_name
+                if selected_feature_name
+                else None
             ),
             parent=self,
         )
@@ -561,6 +627,7 @@ class MainWindow(QMainWindow):
                 )
                 return
 
+            self.project_view.refresh()
             return
 
     def _ensure_project_feature_structure(
@@ -717,6 +784,89 @@ class MainWindow(QMainWindow):
             return False
 
         return True
+
+    def _workspace_navigation_changed(
+            self,
+            _index: int,
+    ) -> None:
+        if (
+                self.workspace_navigation_tabs.currentWidget()
+                is self.project_view
+        ):
+            self.project_view.refresh()
+
+    def _initialize_project_structure_from_view(
+            self,
+    ) -> None:
+        if self._ensure_project_workspace_structure():
+            self.project_view.refresh()
+
+    def _initialize_feature_structure_from_view(
+            self,
+            feature_name: str,
+    ) -> None:
+        if self._ensure_project_feature_structure(
+                feature_name
+        ):
+            self.project_view.refresh()
+
+    def _initialize_package_structure_from_view(
+            self,
+            feature_name: str,
+            package_id: str,
+    ) -> None:
+        if self.workspace_path is None:
+            return
+
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle(
+            "Initialize Package Structure"
+        )
+        message_box.setIcon(
+            QMessageBox.Icon.Question
+        )
+        message_box.setText(
+            f'Initialize the Package "{package_id}"?'
+        )
+        message_box.setInformativeText(
+            (
+                "Create the missing standard Documents and "
+                "Contents folders? Existing files and folders "
+                "will not be moved or deleted."
+            )
+        )
+        message_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+        )
+        message_box.setDefaultButton(
+            QMessageBox.StandardButton.No
+        )
+
+        if (
+                message_box.exec()
+                != QMessageBox.StandardButton.Yes
+        ):
+            return
+
+        try:
+            initialize_project_package_structure(
+                self.workspace_path,
+                feature_name,
+                package_id,
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Initialize Package Structure",
+                (
+                    "Could not create the standard Package "
+                    f"structure.\n\n{error}"
+                ),
+            )
+            return
+
+        self.project_view.refresh()
 
     def _remove_registered_project(
             self,
@@ -898,6 +1048,20 @@ class MainWindow(QMainWindow):
         )
 
         self._load_workspace_project_metadata()
+
+        project_display_name = (
+            self.project_metadata.name
+            if self.project_metadata is not None
+            else Path(path).name
+        )
+        self.project_view.set_workspace(
+            path,
+            project_display_name,
+        )
+        self.workspace_navigation_tabs.setCurrentWidget(
+            self.project_view
+        )
+
         self.central_stack.setCurrentWidget(
             self.workspace_page
         )
@@ -919,6 +1083,9 @@ class MainWindow(QMainWindow):
         )
         self.file_tree.setRootIndex(
             QModelIndex()
+        )
+        self.project_view.set_workspace(
+            None
         )
 
         self.text_editor.clear()
@@ -1125,6 +1292,9 @@ class MainWindow(QMainWindow):
 
         self.project_metadata = metadata
         self.project_metadata_load_error = None
+        self.project_view.set_project_display_name(
+            metadata.name
+        )
 
         if self._is_project_metadata_document_open():
             self._reload_open_project_metadata_document(
@@ -1226,37 +1396,49 @@ class MainWindow(QMainWindow):
         if self.file_model.isDir(index):
             return
 
-        file_path = Path(
+        self._open_file_path(
             self.file_model.filePath(
                 index
             )
         )
 
-        if self.workspace_path is None:
-            return
+    def _open_file_path(
+            self,
+            file_path: str | Path,
+    ) -> bool:
+        path = Path(
+            file_path
+        )
 
-        if not is_workspace_target(
-                file_path,
-                self.workspace_path,
+        if self.workspace_path is None:
+            return False
+
+        if (
+                path.is_dir()
+                or not is_workspace_target(
+                    path,
+                    self.workspace_path,
+                )
         ):
             QMessageBox.warning(
                 self,
                 "Unable to Open File",
                 (
                     "Files outside the current workspace "
-                    "cannot be opened through the workspace."
+                    "or directories cannot be opened "
+                    "through the editor."
                 ),
             )
-            return
+            return False
 
-        if str(file_path) == self.current_file_path:
-            return
+        if str(path) == self.current_file_path:
+            return True
 
         if not self._confirm_discard_unsaved_changes():
-            return
+            return False
 
         try:
-            text = file_path.read_text(
+            text = path.read_text(
                 encoding="utf-8"
             )
         except UnicodeDecodeError:
@@ -1268,7 +1450,7 @@ class MainWindow(QMainWindow):
                     "to be a UTF-8 text file."
                 ),
             )
-            return
+            return False
         except OSError as error:
             QMessageBox.critical(
                 self,
@@ -1278,10 +1460,10 @@ class MainWindow(QMainWindow):
                     f"\n\n{error}"
                 ),
             )
-            return
+            return False
 
         self.current_file_path = str(
-            file_path
+            path
         )
 
         self.text_editor.setPlainText(
@@ -1293,6 +1475,8 @@ class MainWindow(QMainWindow):
 
         self._update_window_title()
         self._update_action_states()
+
+        return True
 
     def _save_current_file(self) -> bool:
         if self.current_file_path is None:
@@ -1446,6 +1630,7 @@ class MainWindow(QMainWindow):
 
         self._update_window_title()
         self._update_action_states()
+        self.project_view.refresh()
 
     def _create_new_folder(
             self,
