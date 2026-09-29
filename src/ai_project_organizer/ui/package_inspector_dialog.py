@@ -22,6 +22,7 @@ from ai_project_organizer.implementation_package import (
 class PackageInspectorDialog(QDialog):
     open_readme_requested = Signal(str)
     open_contents_requested = Signal(str)
+    install_requested = Signal(str)
 
     def __init__(
             self,
@@ -87,6 +88,10 @@ class PackageInspectorDialog(QDialog):
             "Copy Git Commit Message",
             self,
         )
+        self.install_button = QPushButton(
+            "Install Package",
+            self,
+        )
         self.copy_commit_button.setEnabled(
             bool(
                 self.readme.git_commit_message
@@ -102,6 +107,9 @@ class PackageInspectorDialog(QDialog):
         self.copy_commit_button.clicked.connect(
             self._copy_git_commit_message
         )
+        self.install_button.clicked.connect(
+            self._request_install
+        )
 
         action_layout = QHBoxLayout()
         action_layout.addWidget(
@@ -112,6 +120,9 @@ class PackageInspectorDialog(QDialog):
         )
         action_layout.addWidget(
             self.copy_commit_button
+        )
+        action_layout.addWidget(
+            self.install_button
         )
         action_layout.addStretch(
             1
@@ -197,6 +208,15 @@ class PackageInspectorDialog(QDialog):
         return "\n".join(
             rendered
         ).rstrip()
+
+    def _request_install(
+            self,
+    ) -> None:
+        root_name = self.extracted_package.root_path.name
+        self.accept()
+        self.install_requested.emit(
+            root_name
+        )
 
     def _request_open_readme(
             self,

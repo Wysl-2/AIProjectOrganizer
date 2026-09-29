@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import QDir, QModelIndex, Qt, QUrl
+from PySide6.QtCore import QDir, QModelIndex, QStandardPaths, Qt, QUrl
 from PySide6.QtGui import (
     QAction,
     QCloseEvent,
@@ -22,11 +22,13 @@ from PySide6.QtWidgets import (
 )
 
 from ai_project_organizer.implementation_package import (
+    ExtractedImplementationPackage,
     ImplementationPackageError,
     copy_implementation_package_archive,
     discover_extracted_implementation_packages,
     discover_implementation_package_archives,
     extract_implementation_package_archive,
+    inspect_extracted_implementation_package,
     inspect_implementation_package_archive,
     parse_implementation_package_readme,
 )
@@ -51,6 +53,9 @@ from ai_project_organizer.ui.file_tree import FileTreeView
 from ai_project_organizer.ui.new_project_dialog import NewProjectDialog
 from ai_project_organizer.ui.package_inspector_dialog import (
     PackageInspectorDialog,
+)
+from ai_project_organizer.ui.package_install_dialog import (
+    PackageInstallDialog,
 )
 from ai_project_organizer.ui.project_settings_dialog import (
     ProjectSettingsDialog,
@@ -195,6 +200,9 @@ class MainWindow(QMainWindow):
         )
         self.project_view.inspect_implementation_package_requested.connect(
             self._inspect_implementation_package
+        )
+        self.project_view.install_implementation_package_requested.connect(
+            self._install_implementation_package
         )
 
         self.workspace_navigation_tabs = QTabWidget()
@@ -1449,6 +1457,355 @@ class MainWindow(QMainWindow):
         dialog.open_contents_requested.connect(
             self._open_package_contents_from_inspector
         )
+        dialog.install_requested.connect(
+            lambda root_name: self._install_implementation_package(
+                feature_name,
+                package_id,
+                preferred_root_name=root_name,
+            )
+        )
+        dialog.exec()
+
+    def _select_extracted_implementation_package(
+            self,
+            extracted_packages: tuple[
+                ExtractedImplementationPackage,
+                ...,
+            ],
+            *,
+            dialog_title: str,
+            preferred_root_name: str | None = None,
+    ) -> ExtractedImplementationPackage | None:
+        if preferred_root_name is not None:
+            for extracted_package in extracted_packages:
+                if (
+                        extracted_package.root_path.name
+                        == preferred_root_name
+                ):
+                    return extracted_package
+
+            QMessageBox.warning(
+                self,
+                "Implementation Package Unavailable",
+                (
+                    "The extracted implementation package that "
+                    "was selected is no longer available or is "
+                    "no longer structurally valid."
+                ),
+            )
+            return None
+
+        if not extracted_packages:
+            return None
+
+        if len(extracted_packages) == 1:
+            return extracted_packages[0]
+
+        package_names = tuple(
+            package.root_path.name
+            for package in extracted_packages
+        )
+        selected_name, accepted = QInputDialog.getItem(
+            self,
+            dialog_title,
+            "Extracted Package:",
+            package_names,
+            0,
+            False,
+        )
+
+        if not accepted:
+            return None
+
+        return next(
+            package
+            for package in extracted_packages
+            if package.root_path.name == selected_name
+        )
+
+    def _resolve_package_installation_target(
+            self,
+    ) -> Path | None:
+        if self.workspace_path is None:
+            return None
+
+        if (
+                self._is_project_metadata_document_open()
+                and self.text_editor.document().isModified()
+        ):
+            QMessageBox.warning(
+                self,
+                "Project Metadata Has Unsaved Changes",
+                (
+                    "Save or discard the open Project metadata "
+                    "changes before installing an implementation "
+                    "package."
+                ),
+            )
+            return None
+
+        try:
+            metadata = load_project_metadata(
+                self.workspace_path
+            )
+        except (ProjectMetadataError, OSError) as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Load Project Configuration",
+                (
+                    "The Project configuration could not be "
+                    f"loaded.\n\n{error}"
+                ),
+            )
+            return None
+
+        if metadata is None:
+            QMessageBox.information(
+                self,
+                "Project Configuration Required",
+                (
+                    "Configure the Project before installing "
+                    "implementation packages."
+                ),
+            )
+            return None
+
+        target_path = metadata.local_git_repository
+
+        if (
+                not target_path.exists()
+                or not target_path.is_dir()
+        ):
+            QMessageBox.warning(
+                self,
+                "Configured Local Repository Unavailable",
+                (
+                    "The configured local Git repository does "
+                    "not exist or is not a directory:"
+                    f"\n\n{target_path}"
+                ),
+            )
+            return None
+
+        return target_path
+
+    def _confirm_implementation_package_installation(
+            self,
+            package_id: str,
+            extracted_package: ExtractedImplementationPackage,
+            target_path: Path,
+    ) -> bool:
+        message_box = QMessageBox(
+            self
+        )
+        message_box.setWindowTitle(
+            "Install Implementation Package"
+        )
+        message_box.setIcon(
+            QMessageBox.Icon.Warning
+        )
+        message_box.setText(
+            (
+                f'Install Package "{package_id}" into the '
+                "configured local repository?"
+            )
+        )
+        message_box.setInformativeText(
+            (
+                "Extracted Package:\n"
+                f"{extracted_package.root_path.name}\n\n"
+                "Installer:\n"
+                f"{extracted_package.install_script_path}\n\n"
+                "Target:\n"
+                f"{target_path}\n\n"
+                "The installer may modify files in the target "
+                "Project."
+            )
+        )
+
+        install_button = message_box.addButton(
+            "Install",
+            QMessageBox.ButtonRole.AcceptRole,
+        )
+        cancel_button = message_box.addButton(
+            QMessageBox.StandardButton.Cancel
+        )
+        message_box.setDefaultButton(
+            cancel_button
+        )
+        message_box.exec()
+
+        return (
+            message_box.clickedButton()
+            is install_button
+        )
+
+    def _install_implementation_package(
+            self,
+            feature_name: str,
+            package_id: str,
+            preferred_root_name: str | None = None,
+    ) -> None:
+        contents_path = self._package_contents_for_artifact_action(
+            feature_name,
+            package_id,
+        )
+
+        if contents_path is None:
+            return
+
+        try:
+            extracted_packages = (
+                discover_extracted_implementation_packages(
+                    contents_path
+                )
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Install Implementation Package",
+                (
+                    "Could not inspect Package Contents:"
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        if not extracted_packages:
+            try:
+                archives = discover_implementation_package_archives(
+                    contents_path
+                )
+            except OSError as error:
+                QMessageBox.warning(
+                    self,
+                    "Unable to Install Implementation Package",
+                    (
+                        "Could not inspect Package Contents:"
+                        f"\n\n{error}"
+                    ),
+                )
+                return
+
+            if archives:
+                QMessageBox.information(
+                    self,
+                    "Implementation Package Not Extracted",
+                    (
+                        "A valid implementation-package ZIP is "
+                        "available, but it must be extracted before "
+                        "installation."
+                    ),
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "No Installable Implementation Package",
+                    (
+                        "This Package does not contain a valid "
+                        "extracted implementation package."
+                    ),
+                )
+
+            return
+
+        selected_package = (
+            self._select_extracted_implementation_package(
+                extracted_packages,
+                dialog_title="Install Implementation Package",
+                preferred_root_name=preferred_root_name,
+            )
+        )
+
+        if selected_package is None:
+            return
+
+        try:
+            selected_package = (
+                inspect_extracted_implementation_package(
+                    selected_package.root_path
+                )
+            )
+        except (ImplementationPackageError, OSError) as error:
+            QMessageBox.warning(
+                self,
+                "Implementation Package Changed",
+                (
+                    "The extracted implementation package is "
+                    f"no longer valid.\n\n{error}"
+                ),
+            )
+            return
+
+        target_path = self._resolve_package_installation_target()
+
+        if target_path is None:
+            return
+
+        python_program = QStandardPaths.findExecutable(
+            "python3"
+        )
+
+        if not python_program:
+            QMessageBox.warning(
+                self,
+                "Python 3 Unavailable",
+                (
+                    'The "python3" executable could not be found. '
+                    "Install Python 3 or make it available on the "
+                    "application PATH before installing packages."
+                ),
+            )
+            return
+
+        if not self._confirm_implementation_package_installation(
+                package_id,
+                selected_package,
+                target_path,
+        ):
+            return
+
+        try:
+            selected_package = (
+                inspect_extracted_implementation_package(
+                    selected_package.root_path
+                )
+            )
+        except (ImplementationPackageError, OSError) as error:
+            QMessageBox.warning(
+                self,
+                "Implementation Package Changed",
+                (
+                    "The extracted implementation package changed "
+                    "before installation could begin."
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        if (
+                not target_path.exists()
+                or not target_path.is_dir()
+        ):
+            QMessageBox.warning(
+                self,
+                "Configured Local Repository Unavailable",
+                (
+                    "The configured local Git repository is no "
+                    "longer available:"
+                    f"\n\n{target_path}"
+                ),
+            )
+            return
+
+        dialog = PackageInstallDialog(
+            package_id,
+            selected_package,
+            target_path,
+            python_program,
+            parent=self,
+        )
+        dialog.start_installation()
         dialog.exec()
 
     def _open_package_contents_from_inspector(

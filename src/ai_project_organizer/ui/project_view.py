@@ -331,6 +331,10 @@ class ProjectView(QWidget):
         str,
         str,
     )
+    install_implementation_package_requested = Signal(
+        str,
+        str,
+    )
 
     def __init__(
             self,
@@ -879,6 +883,7 @@ class ProjectView(QWidget):
         initialize_package_action = None
         extract_package_action = None
         inspect_package_action = None
+        install_package_action = None
         copy_path_action = None
         open_location_action = None
 
@@ -947,6 +952,9 @@ class ProjectView(QWidget):
             )
             inspect_package_action = menu.addAction(
                 "Inspect Implementation Package..."
+            )
+            install_package_action = menu.addAction(
+                "Install Implementation Package..."
             )
 
         if path_text:
@@ -1020,6 +1028,16 @@ class ProjectView(QWidget):
         ):
             context_feature, context_package = package_context
             self.inspect_implementation_package_requested.emit(
+                context_feature,
+                context_package,
+            )
+
+        elif (
+                selected is install_package_action
+                and package_context is not None
+        ):
+            context_feature, context_package = package_context
+            self.install_implementation_package_requested.emit(
                 context_feature,
                 context_package,
             )
