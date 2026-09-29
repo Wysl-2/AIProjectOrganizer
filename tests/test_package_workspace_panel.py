@@ -11,6 +11,7 @@ os.environ.setdefault(
     "offscreen",
 )
 
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication
 
 from ai_project_organizer.ui.package_workspace_panel import (
@@ -21,6 +22,42 @@ from ai_project_organizer.workspace_structure import (
     create_project_package,
     initialize_project_workspace_structure,
 )
+
+
+class _RecordingMenu:
+    latest_actions: list[str] = []
+
+    def __init__(
+            self,
+            _parent=None,
+    ) -> None:
+        self._actions = []
+        type(self).latest_actions = []
+
+    def addAction(
+            self,
+            text: str,
+    ):
+        action = object()
+        self._actions.append(
+            action
+        )
+        type(self).latest_actions.append(
+            text
+        )
+        return action
+
+    def addSeparator(self) -> None:
+        pass
+
+    def actions(self):
+        return self._actions
+
+    def exec(
+            self,
+            _position,
+    ):
+        return None
 
 
 class PackageWorkspacePanelTests(unittest.TestCase):
@@ -105,6 +142,39 @@ class PackageWorkspacePanelTests(unittest.TestCase):
         ).mkdir()
 
         return package_root
+
+    def _panel_with_package(
+            self,
+            root: Path,
+    ) -> tuple[
+        PackageWorkspacePanel,
+        Path,
+        Path,
+    ]:
+        workspace = self._workspace(
+            root
+        )
+        package = create_project_package(
+            workspace,
+            "Feature",
+            "PKG01",
+        )
+
+        panel = PackageWorkspacePanel()
+        panel.set_feature(
+            workspace,
+            "Feature",
+        )
+        panel.package_list.setCurrentRow(
+            0
+        )
+        QApplication.processEvents()
+
+        return (
+            panel,
+            workspace,
+            package,
+        )
 
     def test_packages_are_discovered_without_automatic_selection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -212,22 +282,8 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             root = Path(
                 temporary_directory
             )
-            workspace = self._workspace(
+            panel, _workspace, package = self._panel_with_package(
                 root
-            )
-            package = create_project_package(
-                workspace,
-                "Feature",
-                "PKG01",
-            )
-
-            panel = PackageWorkspacePanel()
-            panel.set_feature(
-                workspace,
-                "Feature",
-            )
-            panel.package_list.setCurrentRow(
-                0
             )
 
             emitted: list[str] = []
@@ -247,24 +303,99 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 ],
             )
 
-    def test_valid_archive_and_extraction_are_presented(self) -> None:
+    def test_empty_complete_package_action_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(
                 temporary_directory
             )
-            workspace = self._workspace(
+            panel, _workspace, _package = self._panel_with_package(
                 root
             )
-            package = create_project_package(
-                workspace,
-                "Feature",
-                "PKG01",
+
+            self.assertTrue(
+                panel.import_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.extract_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.inspect_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.install_package_button.isEnabled()
+            )
+            self.assertTrue(
+                panel.open_contents_button.isEnabled()
+            )
+
+    def test_valid_archive_enables_extract(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, package = self._panel_with_package(
+                root
+            )
+            self._write_valid_archive(
+                package / "Contents" / "package.zip",
+                "PackageArchive",
+            )
+
+            panel.refresh()
+
+            self.assertEqual(
+                panel.archive_status_label.text(),
+                "ZIP: package.zip",
+            )
+            self.assertTrue(
+                panel.extract_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.inspect_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.install_package_button.isEnabled()
+            )
+
+    def test_valid_extraction_enables_inspect_and_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, package = self._panel_with_package(
+                root
+            )
+            self._write_extracted_package(
+                package / "Contents",
+                "PackageExtracted",
+            )
+
+            panel.refresh()
+
+            self.assertEqual(
+                panel.extracted_status_label.text(),
+                "Extracted: PackageExtracted",
+            )
+            self.assertTrue(
+                panel.inspect_package_button.isEnabled()
+            )
+            self.assertTrue(
+                panel.install_package_button.isEnabled()
+            )
+
+    def test_valid_archive_and_extraction_enable_all_artifact_actions(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, package = self._panel_with_package(
+                root
             )
             contents = package / "Contents"
-
-            archive = contents / "package.zip"
             self._write_valid_archive(
-                archive,
+                contents / "package.zip",
                 "PackageArchive",
             )
             self._write_extracted_package(
@@ -272,39 +403,35 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 "PackageExtracted",
             )
 
-            panel = PackageWorkspacePanel()
-            panel.set_feature(
-                workspace,
-                "Feature",
+            panel.refresh()
+
+            self.assertTrue(
+                panel.import_package_button.isEnabled()
             )
-            panel.package_list.setCurrentRow(
-                0
+            self.assertTrue(
+                panel.extract_package_button.isEnabled()
+            )
+            self.assertTrue(
+                panel.inspect_package_button.isEnabled()
+            )
+            self.assertTrue(
+                panel.install_package_button.isEnabled()
+            )
+            self.assertTrue(
+                panel.open_contents_button.isEnabled()
             )
 
-            self.assertEqual(
-                panel.archive_status_label.text(),
-                "ZIP: package.zip",
-            )
-            self.assertEqual(
-                panel.extracted_status_label.text(),
-                "Extracted: PackageExtracted",
-            )
-
-    def test_multiple_artifacts_are_presented_as_counts(self) -> None:
+    def test_multiple_artifacts_are_counts_without_disabling_actions(
+            self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(
                 temporary_directory
             )
-            workspace = self._workspace(
+            panel, _workspace, package = self._panel_with_package(
                 root
             )
-            package = create_project_package(
-                workspace,
-                "Feature",
-                "PKG01",
-            )
             contents = package / "Contents"
-
             self._write_valid_archive(
                 contents / "a.zip",
                 "PackageA",
@@ -322,14 +449,7 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 "ExtractedB",
             )
 
-            panel = PackageWorkspacePanel()
-            panel.set_feature(
-                workspace,
-                "Feature",
-            )
-            panel.package_list.setCurrentRow(
-                0
-            )
+            panel.refresh()
 
             self.assertEqual(
                 panel.archive_status_label.text(),
@@ -339,28 +459,28 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 panel.extracted_status_label.text(),
                 "Extracted packages: 2",
             )
+            self.assertTrue(
+                panel.extract_package_button.isEnabled()
+            )
+            self.assertTrue(
+                panel.inspect_package_button.isEnabled()
+            )
+            self.assertTrue(
+                panel.install_package_button.isEnabled()
+            )
 
-    def test_invalid_contents_entries_do_not_change_valid_artifact_state(
+    def test_invalid_contents_entries_do_not_enable_artifact_actions(
             self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(
                 temporary_directory
             )
-            workspace = self._workspace(
+            panel, _workspace, package = self._panel_with_package(
                 root
-            )
-            package = create_project_package(
-                workspace,
-                "Feature",
-                "PKG01",
             )
             contents = package / "Contents"
 
-            self._write_valid_archive(
-                contents / "valid.zip",
-                "ValidPackage",
-            )
             (
                 contents
                 / "invalid.zip"
@@ -378,22 +498,242 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            panel = PackageWorkspacePanel()
-            panel.set_feature(
-                workspace,
-                "Feature",
-            )
-            panel.package_list.setCurrentRow(
-                0
-            )
+            panel.refresh()
 
             self.assertEqual(
                 panel.archive_status_label.text(),
-                "ZIP: valid.zip",
+                "ZIP: None",
             )
             self.assertEqual(
                 panel.extracted_status_label.text(),
                 "Extracted: None",
+            )
+            self.assertFalse(
+                panel.extract_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.inspect_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.install_package_button.isEnabled()
+            )
+
+    def test_artifact_discovery_error_disables_state_dependent_actions(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, package = self._panel_with_package(
+                root
+            )
+            document = (
+                package
+                / "Documents"
+                / "design.txt"
+            )
+            document.write_text(
+                "design",
+                encoding="utf-8",
+            )
+
+            with patch(
+                "ai_project_organizer.ui.package_workspace_panel.discover_implementation_package_archives",
+                side_effect=OSError(
+                    "permission denied"
+                ),
+            ):
+                panel._refresh_selected_package()
+
+            self.assertEqual(
+                panel.current_package_id,
+                "PKG01",
+            )
+            self.assertEqual(
+                panel.package_documents_panel.directory_path,
+                package / "Documents",
+            )
+            self.assertIn(
+                "permission denied",
+                panel.artifact_error_label.text(),
+            )
+            self.assertTrue(
+                panel.import_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.extract_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.inspect_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.install_package_button.isEnabled()
+            )
+
+    def test_import_cancel_emits_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, _package = self._panel_with_package(
+                root
+            )
+
+            emitted = []
+            panel.implementation_package_import_requested.connect(
+                lambda *args: emitted.append(
+                    args
+                )
+            )
+
+            with patch(
+                "ai_project_organizer.ui.package_workspace_panel.QFileDialog.getOpenFileName",
+                return_value=(
+                    "",
+                    "",
+                ),
+            ):
+                panel._request_package_import()
+
+            self.assertEqual(
+                emitted,
+                [],
+            )
+
+    def test_import_selection_emits_existing_semantic_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, _package = self._panel_with_package(
+                root
+            )
+
+            emitted = []
+            panel.implementation_package_import_requested.connect(
+                lambda source, feature, package_id: emitted.append(
+                    (
+                        source,
+                        feature,
+                        package_id,
+                    )
+                )
+            )
+
+            with patch(
+                "ai_project_organizer.ui.package_workspace_panel.QFileDialog.getOpenFileName",
+                return_value=(
+                    "/tmp/package.zip",
+                    "ZIP Archives (*.zip)",
+                ),
+            ):
+                panel._request_package_import()
+
+            self.assertEqual(
+                emitted,
+                [
+                    (
+                        "/tmp/package.zip",
+                        "Feature",
+                        "PKG01",
+                    )
+                ],
+            )
+
+    def test_visible_artifact_actions_emit_semantic_requests(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, _package = self._panel_with_package(
+                root
+            )
+
+            extracted = []
+            inspected = []
+            installed = []
+
+            panel.extract_implementation_package_requested.connect(
+                lambda feature, package_id: extracted.append(
+                    (
+                        feature,
+                        package_id,
+                    )
+                )
+            )
+            panel.inspect_implementation_package_requested.connect(
+                lambda feature, package_id: inspected.append(
+                    (
+                        feature,
+                        package_id,
+                    )
+                )
+            )
+            panel.install_implementation_package_requested.connect(
+                lambda feature, package_id: installed.append(
+                    (
+                        feature,
+                        package_id,
+                    )
+                )
+            )
+
+            panel._request_package_extraction()
+            panel._request_package_inspection()
+            panel._request_package_installation()
+
+            self.assertEqual(
+                extracted,
+                [
+                    (
+                        "Feature",
+                        "PKG01",
+                    )
+                ],
+            )
+            self.assertEqual(
+                inspected,
+                [
+                    (
+                        "Feature",
+                        "PKG01",
+                    )
+                ],
+            )
+            self.assertEqual(
+                installed,
+                [
+                    (
+                        "Feature",
+                        "PKG01",
+                    )
+                ],
+            )
+
+    def test_open_contents_uses_canonical_package_contents_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, package = self._panel_with_package(
+                root
+            )
+
+            with patch(
+                "ai_project_organizer.ui.package_workspace_panel.QDesktopServices.openUrl",
+                return_value=True,
+            ) as open_url:
+                panel._open_selected_package_contents()
+
+            open_url.assert_called_once()
+            url = open_url.call_args.args[0]
+
+            self.assertEqual(
+                Path(
+                    url.toLocalFile()
+                ),
+                package / "Contents",
             )
 
     def test_incomplete_package_shows_recovery_and_emits_initialization(
@@ -437,9 +777,7 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 panel.recovery_status_label.text().lower(),
             )
 
-            emitted: list[
-                tuple[str, str]
-            ] = []
+            emitted = []
             panel.initialize_package_requested.connect(
                 lambda feature, package_id: emitted.append(
                     (
@@ -468,22 +806,8 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             root = Path(
                 temporary_directory
             )
-            workspace = self._workspace(
+            panel, _workspace, package = self._panel_with_package(
                 root
-            )
-            package = create_project_package(
-                workspace,
-                "Feature",
-                "PKG01",
-            )
-
-            panel = PackageWorkspacePanel()
-            panel.set_feature(
-                workspace,
-                "Feature",
-            )
-            panel.package_list.setCurrentRow(
-                0
             )
 
             panel.refresh()
@@ -504,6 +828,21 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             self.assertIs(
                 panel.details_stack.currentWidget(),
                 panel.no_selection_page,
+            )
+            self.assertFalse(
+                panel.import_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.extract_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.inspect_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.install_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.open_contents_button.isEnabled()
             )
 
     def test_feature_change_clears_package_selection(self) -> None:
@@ -556,63 +895,57 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 panel.no_selection_page,
             )
 
-    def test_contents_discovery_error_keeps_package_documents_available(
+    def test_context_menu_no_longer_contains_primary_workflow_actions(
             self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(
                 temporary_directory
             )
-            workspace = self._workspace(
+            panel, _workspace, _package = self._panel_with_package(
                 root
             )
-            package = create_project_package(
-                workspace,
-                "Feature",
-                "PKG01",
-            )
-            document = (
-                package
-                / "Documents"
-                / "design.txt"
-            )
-            document.write_text(
-                "design",
-                encoding="utf-8",
-            )
-
-            panel = PackageWorkspacePanel()
-            panel.set_feature(
-                workspace,
-                "Feature",
-            )
-            panel.package_list.setCurrentRow(
+            item = panel.package_list.item(
                 0
             )
 
-            with patch(
-                "ai_project_organizer.ui.package_workspace_panel.discover_implementation_package_archives",
-                side_effect=OSError(
-                    "permission denied"
+            with (
+                patch(
+                    "ai_project_organizer.ui.package_workspace_panel.QMenu",
+                    _RecordingMenu,
+                ),
+                patch.object(
+                    panel.package_list,
+                    "itemAt",
+                    return_value=item,
                 ),
             ):
-                panel._refresh_selected_package()
+                panel._show_package_context_menu(
+                    QPoint(
+                        0,
+                        0,
+                    )
+                )
 
-            self.assertEqual(
-                panel.current_package_id,
-                "PKG01",
-            )
-            self.assertIs(
-                panel.details_stack.currentWidget(),
-                panel.package_details_page,
-            )
-            self.assertEqual(
-                panel.package_documents_panel.directory_path,
-                package / "Documents",
+            self.assertIn(
+                "Copy Path",
+                _RecordingMenu.latest_actions,
             )
             self.assertIn(
-                "permission denied",
-                panel.artifact_error_label.text(),
+                "Open in File Manager",
+                _RecordingMenu.latest_actions,
+            )
+            self.assertNotIn(
+                "Extract Implementation Package...",
+                _RecordingMenu.latest_actions,
+            )
+            self.assertNotIn(
+                "Inspect Implementation Package...",
+                _RecordingMenu.latest_actions,
+            )
+            self.assertNotIn(
+                "Install Implementation Package...",
+                _RecordingMenu.latest_actions,
             )
 
     def test_drop_and_add_package_intent_include_current_feature(self) -> None:
@@ -630,10 +963,8 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 "Feature",
             )
 
-            added: list[str] = []
-            imported: list[
-                tuple[str, str, str]
-            ] = []
+            added = []
+            imported = []
 
             panel.add_package_requested.connect(
                 added.append

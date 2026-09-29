@@ -2,14 +2,11 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
-
 os.environ.setdefault(
     "QT_QPA_PLATFORM",
     "offscreen",
 )
 
-from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication, QDialog
 
 from ai_project_organizer.implementation_package import (
@@ -27,59 +24,38 @@ from ai_project_organizer.workspace_structure import (
 )
 
 
-class _FakeAction:
-    def __init__(
-            self,
-            text: str,
-    ) -> None:
-        self.text = text
-
-
-class _InstallSelectingMenu:
-    def __init__(
-            self,
-            _parent=None,
-    ) -> None:
-        self._actions: list[_FakeAction] = []
-
-    def addAction(
-            self,
-            text: str,
-    ) -> _FakeAction:
-        action = _FakeAction(
-            text
-        )
-        self._actions.append(
-            action
-        )
-        return action
-
-    def addSeparator(self) -> None:
-        pass
-
-    def actions(self) -> list[_FakeAction]:
-        return self._actions
-
-    def exec(
-            self,
-            _position,
-    ) -> _FakeAction | None:
-        for action in self._actions:
-            if (
-                    action.text
-                    == "Install Implementation Package..."
-            ):
-                return action
-
-        return None
-
-
 class PackageInstallUiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.application = QApplication.instance() or QApplication([])
 
-    def test_project_view_install_action_emits_package_context(
+    @staticmethod
+    def _write_extracted_package(
+            contents: Path,
+            root_name: str,
+    ) -> None:
+        package_root = contents / root_name
+        package_root.mkdir()
+        (
+            package_root
+            / "Install.py"
+        ).write_text(
+            "print('install')\n",
+            encoding="utf-8",
+        )
+        (
+            package_root
+            / "README.txt"
+        ).write_text(
+            "# SUMMARY\n\nSummary\n",
+            encoding="utf-8",
+        )
+        (
+            package_root
+            / "Project"
+        ).mkdir()
+
+    def test_project_view_install_button_emits_package_context(
             self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -95,10 +71,14 @@ class PackageInstallUiTests(unittest.TestCase):
                 workspace,
                 "Feature",
             )
-            create_project_package(
+            package = create_project_package(
                 workspace,
                 "Feature",
                 "PKG01",
+            )
+            self._write_extracted_package(
+                package / "Contents",
+                "PackageRoot",
             )
 
             view = ProjectView()
@@ -110,12 +90,16 @@ class PackageInstallUiTests(unittest.TestCase):
             )
 
             panel = view.package_workspace_panel
-            package_item = panel.package_list.item(
+            panel.package_list.setCurrentRow(
                 0
             )
-            emitted: list[
-                tuple[str, str]
-            ] = []
+            QApplication.processEvents()
+
+            self.assertTrue(
+                panel.install_package_button.isEnabled()
+            )
+
+            emitted = []
             view.install_implementation_package_requested.connect(
                 lambda feature_name, package_id: emitted.append(
                     (
@@ -125,23 +109,7 @@ class PackageInstallUiTests(unittest.TestCase):
                 )
             )
 
-            with (
-                patch(
-                    "ai_project_organizer.ui.package_workspace_panel.QMenu",
-                    _InstallSelectingMenu,
-                ),
-                patch.object(
-                    panel.package_list,
-                    "itemAt",
-                    return_value=package_item,
-                ),
-            ):
-                panel._show_package_context_menu(
-                    QPoint(
-                        0,
-                        0,
-                    )
-                )
+            panel.install_package_button.click()
 
             self.assertEqual(
                 emitted,

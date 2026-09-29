@@ -4,6 +4,7 @@ from PySide6.QtCore import QPoint, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -195,6 +196,13 @@ class PackageWorkspacePanel(QGroupBox):
             1,
         )
 
+        self._set_artifact_action_state(
+            can_import=False,
+            can_extract=False,
+            can_inspect=False,
+            can_install=False,
+            can_open_contents=False,
+        )
         self._update_enabled_state()
 
     def _build_no_selection_page(
@@ -275,6 +283,68 @@ class PackageWorkspacePanel(QGroupBox):
         )
         self.artifact_error_label.hide()
 
+        self.import_package_button = QPushButton(
+            "Import ZIP",
+            self.artifact_group,
+        )
+        self.import_package_button.clicked.connect(
+            self._request_package_import
+        )
+
+        self.extract_package_button = QPushButton(
+            "Extract",
+            self.artifact_group,
+        )
+        self.extract_package_button.clicked.connect(
+            self._request_package_extraction
+        )
+
+        self.inspect_package_button = QPushButton(
+            "Inspect",
+            self.artifact_group,
+        )
+        self.inspect_package_button.clicked.connect(
+            self._request_package_inspection
+        )
+
+        self.install_package_button = QPushButton(
+            "Install",
+            self.artifact_group,
+        )
+        self.install_package_button.clicked.connect(
+            self._request_package_installation
+        )
+
+        self.open_contents_button = QPushButton(
+            "Open Contents",
+            self.artifact_group,
+        )
+        self.open_contents_button.clicked.connect(
+            self._open_selected_package_contents
+        )
+
+        primary_actions = QHBoxLayout()
+        primary_actions.addWidget(
+            self.import_package_button
+        )
+        primary_actions.addWidget(
+            self.extract_package_button
+        )
+        primary_actions.addWidget(
+            self.inspect_package_button
+        )
+        primary_actions.addWidget(
+            self.install_package_button
+        )
+
+        secondary_actions = QHBoxLayout()
+        secondary_actions.addWidget(
+            self.open_contents_button
+        )
+        secondary_actions.addStretch(
+            1
+        )
+
         artifact_layout = QVBoxLayout(
             self.artifact_group
         )
@@ -286,6 +356,12 @@ class PackageWorkspacePanel(QGroupBox):
         )
         artifact_layout.addWidget(
             self.artifact_error_label
+        )
+        artifact_layout.addLayout(
+            primary_actions
+        )
+        artifact_layout.addLayout(
+            secondary_actions
         )
 
         layout = QVBoxLayout(
@@ -555,6 +631,13 @@ class PackageWorkspacePanel(QGroupBox):
         self.package_documents_panel.set_directory(
             None
         )
+        self._set_artifact_action_state(
+            can_import=False,
+            can_extract=False,
+            can_inspect=False,
+            can_install=False,
+            can_open_contents=False,
+        )
         self.recovery_title_label.setText(
             package_id
         )
@@ -608,10 +691,23 @@ class PackageWorkspacePanel(QGroupBox):
         contents_path = package_contents_path(
             package_path
         )
+        contents_available = (
+            not contents_path.is_symlink()
+            and contents_path.exists()
+            and contents_path.is_dir()
+        )
 
         self.artifact_error_label.hide()
         self.archive_status_label.show()
         self.extracted_status_label.show()
+
+        self._set_artifact_action_state(
+            can_import=True,
+            can_extract=False,
+            can_inspect=False,
+            can_install=False,
+            can_open_contents=contents_available,
+        )
 
         try:
             archives = discover_implementation_package_archives(
@@ -665,6 +761,188 @@ class PackageWorkspacePanel(QGroupBox):
         self.extracted_status_label.setText(
             extracted_text
         )
+        self._set_artifact_action_state(
+            can_import=True,
+            can_extract=bool(
+                archives
+            ),
+            can_inspect=bool(
+                extracted_packages
+            ),
+            can_install=bool(
+                extracted_packages
+            ),
+            can_open_contents=contents_available,
+        )
+
+    def _set_artifact_action_state(
+            self,
+            *,
+            can_import: bool,
+            can_extract: bool,
+            can_inspect: bool,
+            can_install: bool,
+            can_open_contents: bool,
+    ) -> None:
+        self.import_package_button.setEnabled(
+            can_import
+        )
+        self.extract_package_button.setEnabled(
+            can_extract
+        )
+        self.inspect_package_button.setEnabled(
+            can_inspect
+        )
+        self.install_package_button.setEnabled(
+            can_install
+        )
+        self.open_contents_button.setEnabled(
+            can_open_contents
+        )
+
+    def _request_package_import(
+            self,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+        ):
+            return
+
+        selected_path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Import Implementation Package",
+            "",
+            "ZIP Archives (*.zip)",
+        )
+
+        if not selected_path:
+            return
+
+        self.implementation_package_import_requested.emit(
+            selected_path,
+            feature_name,
+            package_id,
+        )
+
+    def _request_package_extraction(
+            self,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+        ):
+            return
+
+        self.extract_implementation_package_requested.emit(
+            feature_name,
+            package_id,
+        )
+
+    def _request_package_inspection(
+            self,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+        ):
+            return
+
+        self.inspect_implementation_package_requested.emit(
+            feature_name,
+            package_id,
+        )
+
+    def _request_package_installation(
+            self,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+        ):
+            return
+
+        self.install_implementation_package_requested.emit(
+            feature_name,
+            package_id,
+        )
+
+    def _open_selected_package_contents(
+            self,
+    ) -> None:
+        package_id = self.current_package_id
+
+        if package_id is None:
+            return
+
+        item = self._item_for_package_id(
+            package_id
+        )
+
+        if item is None:
+            return
+
+        path_text = item.data(
+            _ITEM_PATH_ROLE
+        )
+
+        if not path_text:
+            return
+
+        contents_path = package_contents_path(
+            Path(
+                str(
+                    path_text
+                )
+            )
+        )
+
+        if (
+                contents_path.is_symlink()
+                or not contents_path.exists()
+                or not contents_path.is_dir()
+        ):
+            self._show_artifact_error(
+                "Package Contents is no longer available."
+            )
+            self.open_contents_button.setEnabled(
+                False
+            )
+            return
+
+        opened = QDesktopServices.openUrl(
+            QUrl.fromLocalFile(
+                str(
+                    contents_path
+                )
+            )
+        )
+
+        if not opened:
+            self._show_artifact_error(
+                "Unable to open Package Contents."
+            )
+
+    def _show_artifact_error(
+            self,
+            text: str,
+    ) -> None:
+        self.artifact_error_label.setText(
+            text
+        )
+        self.artifact_error_label.show()
 
     def _request_add_package(
             self,
@@ -757,22 +1035,8 @@ class PackageWorkspacePanel(QGroupBox):
             self
         )
         initialize_package_action = None
-        extract_package_action = None
-        inspect_package_action = None
-        install_package_action = None
 
-        if state == _STATE_COMPLETE:
-            extract_package_action = menu.addAction(
-                "Extract Implementation Package..."
-            )
-            inspect_package_action = menu.addAction(
-                "Inspect Implementation Package..."
-            )
-            install_package_action = menu.addAction(
-                "Install Implementation Package..."
-            )
-
-        elif state == _STATE_INCOMPLETE:
+        if state == _STATE_INCOMPLETE:
             initialize_package_action = menu.addAction(
                 "Initialize Package Structure..."
             )
@@ -795,24 +1059,6 @@ class PackageWorkspacePanel(QGroupBox):
 
         if selected is initialize_package_action:
             self.initialize_package_requested.emit(
-                feature_name,
-                package_id,
-            )
-
-        elif selected is extract_package_action:
-            self.extract_implementation_package_requested.emit(
-                feature_name,
-                package_id,
-            )
-
-        elif selected is inspect_package_action:
-            self.inspect_implementation_package_requested.emit(
-                feature_name,
-                package_id,
-            )
-
-        elif selected is install_package_action:
-            self.install_implementation_package_requested.emit(
                 feature_name,
                 package_id,
             )
@@ -898,6 +1144,13 @@ class PackageWorkspacePanel(QGroupBox):
     ) -> None:
         self.package_documents_panel.set_directory(
             None
+        )
+        self._set_artifact_action_state(
+            can_import=False,
+            can_extract=False,
+            can_inspect=False,
+            can_install=False,
+            can_open_contents=False,
         )
         self.details_stack.setCurrentWidget(
             self.no_selection_page
