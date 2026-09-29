@@ -4,10 +4,19 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ai_project_organizer.workspace_structure import (
+    FEATURE_DOCUMENTS_DIRECTORY_NAME,
+    FEATURE_PACKAGES_DIRECTORY_NAME,
     PROJECT_DOCUMENTS_DIRECTORY_NAME,
     PROJECT_FEATURES_DIRECTORY_NAME,
+    create_project_feature,
+    discover_project_features,
+    feature_documents_path,
+    feature_packages_path,
+    initialize_project_feature_structure,
     initialize_project_workspace_structure,
+    is_project_workspace_structure_initialized,
     project_documents_path,
+    project_feature_path,
     project_features_path,
 )
 
@@ -30,6 +39,17 @@ class WorkspaceStructureTests(unittest.TestCase):
                 f"Symbolic links are unavailable: {error}"
             )
 
+    def _initialized_workspace(
+            self,
+            root: Path,
+    ) -> Path:
+        workspace = root / "workspace"
+        workspace.mkdir()
+        initialize_project_workspace_structure(
+            workspace
+        )
+        return workspace
+
     def test_standard_paths_are_direct_workspace_children(self) -> None:
         workspace = Path(
             tempfile.gettempdir()
@@ -42,6 +62,29 @@ class WorkspaceStructureTests(unittest.TestCase):
         self.assertEqual(
             project_features_path(workspace),
             workspace / PROJECT_FEATURES_DIRECTORY_NAME,
+        )
+
+    def test_feature_paths_use_standard_feature_children(self) -> None:
+        workspace = (
+            Path(tempfile.gettempdir())
+            / "workspace"
+        )
+        feature = project_feature_path(
+            workspace,
+            "Filesystem Safety",
+        )
+
+        self.assertEqual(
+            feature,
+            workspace / "Features" / "Filesystem Safety",
+        )
+        self.assertEqual(
+            feature_documents_path(feature),
+            feature / FEATURE_DOCUMENTS_DIRECTORY_NAME,
+        )
+        self.assertEqual(
+            feature_packages_path(feature),
+            feature / FEATURE_PACKAGES_DIRECTORY_NAME,
         )
 
     def test_missing_standard_directories_are_created(self) -> None:
@@ -273,6 +316,39 @@ class WorkspaceStructureTests(unittest.TestCase):
                 (workspace / "Features").is_dir()
             )
 
+    def test_project_structure_readiness_reports_missing_and_initialized(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+
+            self.assertFalse(
+                is_project_workspace_structure_initialized(
+                    workspace
+                )
+            )
+
+            initialize_project_workspace_structure(
+                workspace
+            )
+
+            self.assertTrue(
+                is_project_workspace_structure_initialized(
+                    workspace
+                )
+            )
+
+    def test_project_structure_readiness_rejects_conflicting_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            (workspace / "Features").write_text(
+                "conflict",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(NotADirectoryError):
+                is_project_workspace_structure_initialized(
+                    workspace
+                )
+
     def test_partial_creation_failure_removes_only_directory_created_by_call(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             workspace = Path(temporary_directory)
@@ -308,6 +384,390 @@ class WorkspaceStructureTests(unittest.TestCase):
             )
             self.assertFalse(
                 (workspace / "Features").exists()
+            )
+
+    def test_create_feature_builds_complete_standard_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+
+            feature = create_project_feature(
+                workspace,
+                "Filesystem Safety",
+            )
+
+            self.assertEqual(
+                feature,
+                workspace / "Features" / "Filesystem Safety",
+            )
+            self.assertTrue(
+                (feature / "Documents").is_dir()
+            )
+            self.assertTrue(
+                (feature / "Packages").is_dir()
+            )
+
+    def test_create_feature_normalizes_surrounding_whitespace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+
+            feature = create_project_feature(
+                workspace,
+                "  Filesystem Safety  ",
+            )
+
+            self.assertEqual(
+                feature.name,
+                "Filesystem Safety",
+            )
+
+    def test_invalid_feature_names_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+
+            for name in (
+                "",
+                "   ",
+                ".",
+                "..",
+                "Feature/Subfeature",
+                "Feature\\Subfeature",
+            ):
+                with self.subTest(name=name):
+                    with self.assertRaises(ValueError):
+                        create_project_feature(
+                            workspace,
+                            name,
+                        )
+
+    def test_existing_feature_directory_is_not_merged(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            feature = (
+                workspace
+                / "Features"
+                / "Existing Feature"
+            )
+            feature.mkdir()
+            marker = feature / "notes.txt"
+            marker.write_text(
+                "preserve",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(FileExistsError):
+                create_project_feature(
+                    workspace,
+                    "Existing Feature",
+                )
+
+            self.assertEqual(
+                marker.read_text(encoding="utf-8"),
+                "preserve",
+            )
+            self.assertFalse(
+                (feature / "Documents").exists()
+            )
+
+    def test_existing_feature_file_is_not_replaced(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            feature = (
+                workspace
+                / "Features"
+                / "Occupied"
+            )
+            feature.write_text(
+                "preserve",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(FileExistsError):
+                create_project_feature(
+                    workspace,
+                    "Occupied",
+                )
+
+            self.assertEqual(
+                feature.read_text(encoding="utf-8"),
+                "preserve",
+            )
+
+    def test_dangling_feature_symlink_prevents_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            feature = (
+                workspace
+                / "Features"
+                / "Linked Feature"
+            )
+            self._symlink(
+                feature,
+                root / "missing",
+                target_is_directory=True,
+            )
+
+            with self.assertRaises(FileExistsError):
+                create_project_feature(
+                    workspace,
+                    "Linked Feature",
+                )
+
+            self.assertTrue(
+                feature.is_symlink()
+            )
+
+    def test_feature_initialization_preserves_existing_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            feature = (
+                workspace
+                / "Features"
+                / "Existing Feature"
+            )
+            feature.mkdir()
+            marker = feature / "notes.txt"
+            marker.write_text(
+                "preserve",
+                encoding="utf-8",
+            )
+
+            initialize_project_feature_structure(
+                workspace,
+                "Existing Feature",
+            )
+
+            self.assertTrue(
+                (feature / "Documents").is_dir()
+            )
+            self.assertTrue(
+                (feature / "Packages").is_dir()
+            )
+            self.assertEqual(
+                marker.read_text(encoding="utf-8"),
+                "preserve",
+            )
+
+    def test_feature_initialization_preflights_children_before_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            feature = (
+                workspace
+                / "Features"
+                / "Existing Feature"
+            )
+            feature.mkdir()
+            packages = feature / "Packages"
+            packages.write_text(
+                "preserve",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(NotADirectoryError):
+                initialize_project_feature_structure(
+                    workspace,
+                    "Existing Feature",
+                )
+
+            self.assertFalse(
+                (feature / "Documents").exists()
+            )
+            self.assertEqual(
+                packages.read_text(encoding="utf-8"),
+                "preserve",
+            )
+
+    def test_feature_symlink_root_cannot_be_initialized(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            outside = root / "outside"
+            outside.mkdir()
+            feature = (
+                workspace
+                / "Features"
+                / "Linked Feature"
+            )
+            self._symlink(
+                feature,
+                outside,
+                target_is_directory=True,
+            )
+
+            with self.assertRaises(NotADirectoryError):
+                initialize_project_feature_structure(
+                    workspace,
+                    "Linked Feature",
+                )
+
+            self.assertEqual(
+                list(outside.iterdir()),
+                [],
+            )
+
+    def test_discovery_returns_real_immediate_feature_directories_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            features_root = workspace / "Features"
+            alpha = features_root / "Alpha"
+            beta = features_root / "beta"
+            alpha.mkdir()
+            beta.mkdir()
+            (features_root / "notes.txt").write_text(
+                "not a feature",
+                encoding="utf-8",
+            )
+            outside = root / "outside"
+            outside.mkdir()
+            linked = features_root / "External"
+            self._symlink(
+                linked,
+                outside,
+                target_is_directory=True,
+            )
+
+            discovered = discover_project_features(
+                workspace
+            )
+
+            self.assertEqual(
+                discovered,
+                (
+                    alpha,
+                    beta,
+                ),
+            )
+
+    def test_discovery_includes_incomplete_real_feature(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            feature = (
+                workspace
+                / "Features"
+                / "Manual Feature"
+            )
+            feature.mkdir()
+            (feature / "notes.txt").write_text(
+                "existing",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                discover_project_features(
+                    workspace
+                ),
+                (feature,),
+            )
+
+    def test_discovery_order_is_deterministic(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            features_root = workspace / "Features"
+
+            for name in (
+                "gamma",
+                "beta",
+                "Alpha",
+            ):
+                (features_root / name).mkdir()
+
+            self.assertEqual(
+                [
+                    path.name
+                    for path in discover_project_features(
+                        workspace
+                    )
+                ],
+                [
+                    "Alpha",
+                    "beta",
+                    "gamma",
+                ],
+            )
+
+    def test_discovery_requires_features_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+
+            with self.assertRaises(FileNotFoundError):
+                discover_project_features(
+                    workspace
+                )
+
+    def test_failed_feature_creation_removes_empty_created_feature(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            real_mkdir = Path.mkdir
+
+            def controlled_mkdir(
+                    path: Path,
+                    *args,
+                    **kwargs,
+            ) -> None:
+                if path.name == "Packages":
+                    raise PermissionError(
+                        "permission denied"
+                    )
+
+                real_mkdir(
+                    path,
+                    *args,
+                    **kwargs,
+                )
+
+            with patch(
+                "ai_project_organizer.workspace_structure.Path.mkdir",
+                new=controlled_mkdir,
+            ):
+                with self.assertRaises(PermissionError):
+                    create_project_feature(
+                        workspace,
+                        "Broken Feature",
+                    )
+
+            self.assertFalse(
+                (
+                    workspace
+                    / "Features"
+                    / "Broken Feature"
+                ).exists()
             )
 
 

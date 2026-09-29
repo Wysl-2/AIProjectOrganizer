@@ -45,6 +45,11 @@ from ai_project_organizer.workspace_paths import (
     is_workspace_target,
     same_path_entry,
 )
+from ai_project_organizer.workspace_structure import (
+    create_project_feature,
+    initialize_project_workspace_structure,
+    is_project_workspace_structure_initialized,
+)
 
 
 class MainWindow(QMainWindow):
@@ -237,6 +242,14 @@ class MainWindow(QMainWindow):
             self._create_project
         )
 
+        self.add_feature_action = QAction(
+            "Add Feature...",
+            self,
+        )
+        self.add_feature_action.triggered.connect(
+            self._add_feature
+        )
+
         self.configure_project_action = QAction(
             "Configure Project...",
             self,
@@ -255,6 +268,10 @@ class MainWindow(QMainWindow):
 
         project_menu.addAction(
             self.new_project_action
+        )
+        project_menu.addSeparator()
+        project_menu.addAction(
+            self.add_feature_action
         )
         project_menu.addSeparator()
         project_menu.addAction(
@@ -401,6 +418,125 @@ class MainWindow(QMainWindow):
         self._activate_workspace(
             created_workspace
         )
+
+    def _add_feature(self) -> None:
+        if self.workspace_path is None:
+            return
+
+        if not self._ensure_project_workspace_structure():
+            return
+
+        feature_name, accepted = QInputDialog.getText(
+            self,
+            "Add Feature",
+            "Feature name:",
+        )
+
+        if not accepted:
+            return
+
+        try:
+            create_project_feature(
+                self.workspace_path,
+                feature_name,
+            )
+        except ValueError as error:
+            QMessageBox.warning(
+                self,
+                "Invalid Feature Name",
+                str(error),
+            )
+        except FileExistsError as error:
+            QMessageBox.warning(
+                self,
+                "Feature Already Exists",
+                str(error),
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Add Feature",
+                (
+                    "Could not create the Feature:"
+                    f"\n\n{error}"
+                ),
+            )
+
+    def _ensure_project_workspace_structure(
+            self,
+    ) -> bool:
+        if self.workspace_path is None:
+            return False
+
+        try:
+            initialized = (
+                is_project_workspace_structure_initialized(
+                    self.workspace_path
+                )
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Initialize Project Structure",
+                (
+                    "The Project workspace structure could not "
+                    f"be validated.\n\n{error}"
+                ),
+            )
+            return False
+
+        if initialized:
+            return True
+
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle(
+            "Initialize Project Structure"
+        )
+        message_box.setIcon(
+            QMessageBox.Icon.Question
+        )
+        message_box.setText(
+            "Initialize the standard Project structure?"
+        )
+        message_box.setInformativeText(
+            (
+                "This workspace does not contain the standard "
+                "Documents and Features folders.\n\n"
+                "Create the missing standard folders now? "
+                "Existing files and folders will not be moved "
+                "or deleted."
+            )
+        )
+        message_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+        )
+        message_box.setDefaultButton(
+            QMessageBox.StandardButton.No
+        )
+
+        if (
+                message_box.exec()
+                != QMessageBox.StandardButton.Yes
+        ):
+            return False
+
+        try:
+            initialize_project_workspace_structure(
+                self.workspace_path
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Initialize Project Structure",
+                (
+                    "Could not create the standard Project "
+                    f"structure.\n\n{error}"
+                ),
+            )
+            return False
+
+        return True
 
     def _remove_registered_project(
             self,
@@ -1704,6 +1840,9 @@ class MainWindow(QMainWindow):
         )
         self.save_action.setEnabled(
             has_document
+        )
+        self.add_feature_action.setEnabled(
+            has_workspace
         )
         self.configure_project_action.setEnabled(
             has_workspace

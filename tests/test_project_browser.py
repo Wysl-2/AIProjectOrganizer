@@ -286,6 +286,9 @@ class ProjectBrowserIntegrationTests(unittest.TestCase):
             self.window.save_action.isEnabled()
         )
         self.assertFalse(
+            self.window.add_feature_action.isEnabled()
+        )
+        self.assertFalse(
             self.window.configure_project_action.isEnabled()
         )
         self.assertFalse(
@@ -309,6 +312,9 @@ class ProjectBrowserIntegrationTests(unittest.TestCase):
         )
         self.assertFalse(
             self.window.save_action.isEnabled()
+        )
+        self.assertTrue(
+            self.window.add_feature_action.isEnabled()
         )
         self.assertTrue(
             self.window.configure_project_action.isEnabled()
