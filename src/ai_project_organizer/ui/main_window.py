@@ -16,6 +16,11 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 
+from ai_project_organizer.implementation_package import (
+    ImplementationPackageError,
+    copy_implementation_package_archive,
+    inspect_implementation_package_archive,
+)
 from ai_project_organizer.project import (
     PROJECT_METADATA_FILENAME,
     ProjectMetadata,
@@ -58,7 +63,10 @@ from ai_project_organizer.workspace_structure import (
     initialize_project_package_structure,
     initialize_project_workspace_structure,
     is_project_feature_structure_initialized,
+    is_project_package_structure_initialized,
     is_project_workspace_structure_initialized,
+    package_contents_path,
+    project_package_path,
 )
 
 
@@ -166,6 +174,9 @@ class MainWindow(QMainWindow):
         )
         self.project_view.initialize_package_requested.connect(
             self._initialize_package_structure_from_view
+        )
+        self.project_view.implementation_package_import_requested.connect(
+            self._import_implementation_package
         )
 
         self.workspace_navigation_tabs = QTabWidget()
@@ -810,13 +821,35 @@ class MainWindow(QMainWindow):
         ):
             self.project_view.refresh()
 
-    def _initialize_package_structure_from_view(
+    def _ensure_project_package_structure(
             self,
             feature_name: str,
             package_id: str,
-    ) -> None:
+    ) -> bool:
         if self.workspace_path is None:
-            return
+            return False
+
+        try:
+            initialized = (
+                is_project_package_structure_initialized(
+                    self.workspace_path,
+                    feature_name,
+                    package_id,
+                )
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Initialize Package Structure",
+                (
+                    "The Package structure could not be "
+                    f"validated.\n\n{error}"
+                ),
+            )
+            return False
+
+        if initialized:
+            return True
 
         message_box = QMessageBox(self)
         message_box.setWindowTitle(
@@ -847,7 +880,7 @@ class MainWindow(QMainWindow):
                 message_box.exec()
                 != QMessageBox.StandardButton.Yes
         ):
-            return
+            return False
 
         try:
             initialize_project_package_structure(
@@ -862,6 +895,266 @@ class MainWindow(QMainWindow):
                 (
                     "Could not create the standard Package "
                     f"structure.\n\n{error}"
+                ),
+            )
+            return False
+
+        return True
+
+    def _initialize_package_structure_from_view(
+            self,
+            feature_name: str,
+            package_id: str,
+    ) -> None:
+        if self._ensure_project_package_structure(
+                feature_name,
+                package_id,
+        ):
+            self.project_view.refresh()
+
+    def _import_implementation_package(
+            self,
+            source_path: str,
+            feature_name: str,
+            package_id: str,
+    ) -> None:
+        if self.workspace_path is None:
+            return
+
+        try:
+            inspection = inspect_implementation_package_archive(
+                source_path
+            )
+        except ImplementationPackageError as error:
+            QMessageBox.warning(
+                self,
+                "Invalid Implementation Package",
+                str(error),
+            )
+            return
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Import Implementation Package",
+                (
+                    "Could not read the implementation package:"
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        if not self._ensure_project_feature_structure(
+                feature_name
+        ):
+            return
+
+        resolved_package_id = package_id
+
+        if resolved_package_id:
+            try:
+                package_path = project_package_path(
+                    self.workspace_path,
+                    feature_name,
+                    resolved_package_id,
+                )
+            except ValueError as error:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Package ID",
+                    str(error),
+                )
+                return
+
+            if (
+                    package_path.is_symlink()
+                    or not package_path.exists()
+                    or not package_path.is_dir()
+            ):
+                QMessageBox.warning(
+                    self,
+                    "Package Unavailable",
+                    (
+                        "The selected Package no longer exists "
+                        "as an available Package directory."
+                    ),
+                )
+                return
+
+            inferred_id = inspection.inferred_package_id
+
+            if (
+                    inferred_id is not None
+                    and inferred_id != resolved_package_id
+            ):
+                message_box = QMessageBox(self)
+                message_box.setWindowTitle(
+                    "Package ID Does Not Match"
+                )
+                message_box.setIcon(
+                    QMessageBox.Icon.Warning
+                )
+                message_box.setText(
+                    (
+                        "This archive appears to belong to "
+                        f'Package "{inferred_id}", but it was '
+                        f'dropped on Package "{resolved_package_id}".'
+                    )
+                )
+                message_box.setInformativeText(
+                    (
+                        f"Import it into "
+                        f'"{resolved_package_id}" anyway?'
+                    )
+                )
+                message_box.setStandardButtons(
+                    QMessageBox.StandardButton.Yes
+                    | QMessageBox.StandardButton.No
+                )
+                message_box.setDefaultButton(
+                    QMessageBox.StandardButton.No
+                )
+
+                if (
+                        message_box.exec()
+                        != QMessageBox.StandardButton.Yes
+                ):
+                    return
+
+            if not self._ensure_project_package_structure(
+                    feature_name,
+                    resolved_package_id,
+            ):
+                return
+
+        else:
+            inferred_package_id = inspection.inferred_package_id
+
+            while True:
+                candidate_package_id = inferred_package_id
+
+                if candidate_package_id is None:
+                    candidate_package_id, accepted = (
+                        QInputDialog.getText(
+                            self,
+                            "Import Implementation Package",
+                            "Package ID:",
+                        )
+                    )
+
+                    if not accepted:
+                        return
+
+                try:
+                    package_path = project_package_path(
+                        self.workspace_path,
+                        feature_name,
+                        candidate_package_id,
+                    )
+                except ValueError as error:
+                    QMessageBox.warning(
+                        self,
+                        "Invalid Package ID",
+                        str(error),
+                    )
+
+                    if inferred_package_id is not None:
+                        return
+
+                    continue
+
+                resolved_package_id = package_path.name
+                break
+
+            if package_path.is_symlink():
+                QMessageBox.warning(
+                    self,
+                    "Package Location Unavailable",
+                    (
+                        "The selected Package location is occupied "
+                        "by a symbolic link."
+                    ),
+                )
+                return
+
+            if package_path.exists():
+                if not package_path.is_dir():
+                    QMessageBox.warning(
+                        self,
+                        "Package Location Unavailable",
+                        (
+                            "The selected Package location is occupied "
+                            "by a non-directory filesystem entry."
+                        ),
+                    )
+                    return
+
+                if not self._ensure_project_package_structure(
+                        feature_name,
+                        resolved_package_id,
+                ):
+                    return
+            else:
+                try:
+                    package_path = create_project_package(
+                        self.workspace_path,
+                        feature_name,
+                        resolved_package_id,
+                    )
+                except ValueError as error:
+                    QMessageBox.warning(
+                        self,
+                        "Invalid Package ID",
+                        str(error),
+                    )
+                    return
+                except FileExistsError as error:
+                    QMessageBox.warning(
+                        self,
+                        "Package Already Exists",
+                        str(error),
+                    )
+                    return
+                except OSError as error:
+                    QMessageBox.warning(
+                        self,
+                        "Unable to Import Implementation Package",
+                        (
+                            "Could not create the Package workspace:"
+                            f"\n\n{error}"
+                        ),
+                    )
+                    return
+
+        contents_path = package_contents_path(
+            package_path
+        )
+
+        try:
+            copy_implementation_package_archive(
+                source_path,
+                contents_path,
+            )
+        except FileExistsError as error:
+            QMessageBox.warning(
+                self,
+                "Implementation Package Already Exists",
+                str(error),
+            )
+            return
+        except ImplementationPackageError as error:
+            QMessageBox.warning(
+                self,
+                "Invalid Implementation Package",
+                str(error),
+            )
+            return
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Import Implementation Package",
+                (
+                    "Could not copy the implementation package:"
+                    f"\n\n{error}"
                 ),
             )
             return

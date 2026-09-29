@@ -1,12 +1,23 @@
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import (
+    QDesktopServices,
+    QDragEnterEvent,
+    QDragLeaveEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QPainter,
+)
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
     QHBoxLayout,
     QLabel,
     QMenu,
     QPushButton,
+    QStyle,
+    QStyleOptionViewItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -45,6 +56,260 @@ KIND_FILE = "file"
 KIND_STATUS = "status"
 
 
+class _ProjectTreeWidget(QTreeWidget):
+    implementation_package_drop_requested = Signal(
+        str,
+        str,
+        str,
+    )
+
+    def __init__(
+            self,
+            parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+
+        self._drop_highlight_item: QTreeWidgetItem | None = None
+
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(
+            QAbstractItemView.DragDropMode.DropOnly
+        )
+        self.setDefaultDropAction(
+            Qt.DropAction.CopyAction
+        )
+
+    @staticmethod
+    def _local_zip_candidate(
+            mime_data,
+    ) -> Path | None:
+        urls = mime_data.urls()
+
+        if len(urls) != 1:
+            return None
+
+        url = urls[0]
+
+        if not url.isLocalFile():
+            return None
+
+        local_path = url.toLocalFile()
+
+        if not local_path:
+            return None
+
+        path = Path(
+            local_path
+        )
+
+        if (
+                path.is_symlink()
+                or not path.exists()
+                or not path.is_file()
+                or path.suffix.casefold() != ".zip"
+        ):
+            return None
+
+        return path
+
+    @staticmethod
+    def _drop_target_for_item(
+            item: QTreeWidgetItem | None,
+    ) -> tuple[str, str] | None:
+        if item is None:
+            return None
+
+        kind = item.data(
+            0,
+            KIND_ROLE,
+        )
+        feature_name = item.data(
+            0,
+            FEATURE_ROLE,
+        )
+        package_id = item.data(
+            0,
+            PACKAGE_ROLE,
+        )
+
+        if (
+                kind in {
+                    KIND_FEATURE,
+                    KIND_PACKAGES,
+                }
+                and feature_name
+        ):
+            return (
+                feature_name,
+                "",
+            )
+
+        if (
+                kind in {
+                    KIND_PACKAGE,
+                    KIND_CONTENTS,
+                }
+                and feature_name
+                and package_id
+        ):
+            return (
+                feature_name,
+                package_id,
+            )
+
+        return None
+
+    def clear_drop_highlight(
+            self,
+    ) -> None:
+        if self._drop_highlight_item is None:
+            return
+
+        self._drop_highlight_item = None
+        self.viewport().update()
+
+    def _set_drop_highlight(
+            self,
+            item: QTreeWidgetItem | None,
+    ) -> None:
+        if item is self._drop_highlight_item:
+            return
+
+        self._drop_highlight_item = item
+        self.viewport().update()
+
+    def dragEnterEvent(
+            self,
+            event: QDragEnterEvent,
+    ) -> None:
+        self.clear_drop_highlight()
+
+        if self._local_zip_candidate(
+                event.mimeData()
+        ) is None:
+            event.ignore()
+            return
+
+        event.setDropAction(
+            Qt.DropAction.CopyAction
+        )
+        event.accept()
+
+    def dragMoveEvent(
+            self,
+            event: QDragMoveEvent,
+    ) -> None:
+        if self._local_zip_candidate(
+                event.mimeData()
+        ) is None:
+            self.clear_drop_highlight()
+            event.ignore()
+            return
+
+        item = self.itemAt(
+            event.position().toPoint()
+        )
+        target = self._drop_target_for_item(
+            item
+        )
+
+        if target is None:
+            self.clear_drop_highlight()
+            event.ignore()
+            return
+
+        self._set_drop_highlight(
+            item
+        )
+        event.setDropAction(
+            Qt.DropAction.CopyAction
+        )
+        event.accept()
+
+    def dragLeaveEvent(
+            self,
+            event: QDragLeaveEvent,
+    ) -> None:
+        self.clear_drop_highlight()
+        super().dragLeaveEvent(
+            event
+        )
+
+    def dropEvent(
+            self,
+            event: QDropEvent,
+    ) -> None:
+        source = self._local_zip_candidate(
+            event.mimeData()
+        )
+        item = self.itemAt(
+            event.position().toPoint()
+        )
+        target = self._drop_target_for_item(
+            item
+        )
+
+        self.clear_drop_highlight()
+
+        if (
+                source is None
+                or target is None
+        ):
+            event.ignore()
+            return
+
+        feature_name, package_id = target
+
+        event.setDropAction(
+            Qt.DropAction.CopyAction
+        )
+        event.accept()
+
+        self.implementation_package_drop_requested.emit(
+            str(source),
+            feature_name,
+            package_id,
+        )
+
+    def drawRow(
+            self,
+            painter: QPainter,
+            options: QStyleOptionViewItem,
+            index,
+    ) -> None:
+        item = self.itemFromIndex(
+            index
+        )
+
+        if (
+                self._drop_highlight_item is not None
+                and item is self._drop_highlight_item
+        ):
+            highlighted_options = QStyleOptionViewItem(
+                options
+            )
+            highlighted_options.state |= (
+                QStyle.StateFlag.State_Selected
+            )
+            highlighted_options.state &= ~(
+                QStyle.StateFlag.State_HasFocus
+            )
+
+            super().drawRow(
+                painter,
+                highlighted_options,
+                index,
+            )
+            return
+
+        super().drawRow(
+            painter,
+            options,
+            index,
+        )
+
+
 class ProjectView(QWidget):
     file_open_requested = Signal(str)
     new_document_requested = Signal(str)
@@ -53,8 +318,16 @@ class ProjectView(QWidget):
     initialize_project_requested = Signal()
     initialize_feature_requested = Signal(str)
     initialize_package_requested = Signal(str, str)
+    implementation_package_import_requested = Signal(
+        str,
+        str,
+        str,
+    )
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+            self,
+            parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
 
         self.workspace_path: Path | None = None
@@ -108,7 +381,9 @@ class ProjectView(QWidget):
         )
         self.initialize_project_button.hide()
 
-        self.tree = QTreeWidget(self)
+        self.tree = _ProjectTreeWidget(
+            self
+        )
         self.tree.setHeaderHidden(True)
         self.tree.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu
@@ -118,6 +393,15 @@ class ProjectView(QWidget):
         )
         self.tree.itemDoubleClicked.connect(
             self._activate_item
+        )
+        self.tree.implementation_package_drop_requested.connect(
+            lambda source_path, feature_name, package_id: (
+                self.implementation_package_import_requested.emit(
+                    source_path,
+                    feature_name,
+                    package_id,
+                )
+            )
         )
 
         layout = QVBoxLayout(self)
@@ -142,6 +426,7 @@ class ProjectView(QWidget):
             workspace_path: str | Path | None,
             display_name: str | None = None,
     ) -> None:
+        self.tree.clear_drop_highlight()
         self.workspace_path = (
             Path(workspace_path).expanduser()
             if workspace_path is not None
@@ -162,6 +447,7 @@ class ProjectView(QWidget):
             self.refresh()
 
     def refresh(self) -> None:
+        self.tree.clear_drop_highlight()
         self.tree.clear()
         self.status_label.hide()
         self.initialize_project_button.hide()
@@ -449,7 +735,10 @@ class ProjectView(QWidget):
         )
 
         for entry in entries:
-            if entry.is_dir() and not entry.is_symlink():
+            if (
+                    entry.is_dir()
+                    and not entry.is_symlink()
+            ):
                 item = self._item(
                     entry.name,
                     entry,
@@ -592,15 +881,21 @@ class ProjectView(QWidget):
             documents_path = self._documents_target_for_item(
                 item
             )
-            if documents_path is not None and documents_path.is_dir():
+            if (
+                    documents_path is not None
+                    and documents_path.is_dir()
+            ):
                 new_document_action = menu.addAction(
                     "New Document..."
                 )
 
-        if kind in {
-            KIND_FEATURE,
-            KIND_PACKAGES,
-        } and feature_name:
+        if (
+                kind in {
+                    KIND_FEATURE,
+                    KIND_PACKAGES,
+                }
+                and feature_name
+        ):
             add_package_action = menu.addAction(
                 "Add Package..."
             )
@@ -658,7 +953,10 @@ class ProjectView(QWidget):
                     str(documents_path)
                 )
 
-        elif selected is add_package_action and feature_name:
+        elif (
+                selected is add_package_action
+                and feature_name
+        ):
             self.add_package_requested.emit(
                 feature_name
             )
@@ -681,13 +979,18 @@ class ProjectView(QWidget):
                 package_id,
             )
 
-        elif selected is copy_path_action and path_text:
-            from PySide6.QtWidgets import QApplication
+        elif (
+                selected is copy_path_action
+                and path_text
+        ):
             QApplication.clipboard().setText(
                 path_text
             )
 
-        elif selected is open_location_action and path_text:
+        elif (
+                selected is open_location_action
+                and path_text
+        ):
             path = Path(
                 path_text
             )

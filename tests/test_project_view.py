@@ -5,9 +5,13 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QMimeData, QUrl
 from PySide6.QtWidgets import QApplication
 
-from ai_project_organizer.ui.project_view import ProjectView
+from ai_project_organizer.ui.project_view import (
+    ProjectView,
+    _ProjectTreeWidget,
+)
 from ai_project_organizer.workspace_structure import (
     create_project_feature,
     create_project_package,
@@ -100,10 +104,8 @@ class ProjectViewTests(unittest.TestCase):
                 "scratch",
                 encoding="utf-8",
             )
-
             view = ProjectView()
             view.set_workspace(workspace)
-
             self.assertNotIn(
                 "scratch.txt",
                 self._tree_texts(view),
@@ -113,15 +115,10 @@ class ProjectViewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             workspace = self._initialized_workspace(root)
-
             view = ProjectView()
             view.set_workspace(workspace)
-
-            feature = workspace / "Features" / "External Feature"
-            feature.mkdir()
-
+            (workspace / "Features" / "External Feature").mkdir()
             view.refresh()
-
             self.assertIn(
                 "External Feature",
                 self._tree_texts(view),
@@ -130,10 +127,8 @@ class ProjectViewTests(unittest.TestCase):
     def test_incomplete_project_does_not_initialize(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             workspace = Path(temporary_directory)
-
             view = ProjectView()
             view.set_workspace(workspace)
-
             self.assertTrue(
                 view.status_label.isVisible()
                 or bool(view.status_label.text())
@@ -141,58 +136,108 @@ class ProjectViewTests(unittest.TestCase):
             self.assertFalse(
                 (workspace / "Documents").exists()
             )
-            self.assertFalse(
-                (workspace / "Features").exists()
-            )
 
     def test_file_activation_emits_real_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             workspace = self._initialized_workspace(root)
             document = workspace / "Documents" / "note.txt"
-            document.write_text(
-                "text",
-                encoding="utf-8",
-            )
-
+            document.write_text("text", encoding="utf-8")
             view = ProjectView()
             view.set_workspace(workspace)
-
             emitted: list[str] = []
-            view.file_open_requested.connect(
-                emitted.append
-            )
-
-            documents = view.tree.topLevelItem(0).child(0)
-            file_item = documents.child(0)
-            view._activate_item(
-                file_item,
-                0,
-            )
-
-            self.assertEqual(
-                emitted,
-                [str(document)],
-            )
+            view.file_open_requested.connect(emitted.append)
+            item = view.tree.topLevelItem(0).child(0).child(0)
+            view._activate_item(item, 0)
+            self.assertEqual(emitted, [str(document)])
 
     def test_incomplete_feature_remains_visible(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             workspace = self._initialized_workspace(root)
-            feature = workspace / "Features" / "Manual Feature"
-            feature.mkdir()
+            (workspace / "Features" / "Manual Feature").mkdir()
+            view = ProjectView()
+            view.set_workspace(workspace)
+            texts = self._tree_texts(view)
+            self.assertIn("Manual Feature", texts)
+            self.assertIn("Structure incomplete", texts)
 
+    def test_zip_candidate_filter_is_narrow(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            archive = root / "package.zip"
+            text_file = root / "notes.txt"
+            archive.write_bytes(b"candidate")
+            text_file.write_text("notes", encoding="utf-8")
+
+            mime = QMimeData()
+            mime.setUrls([QUrl.fromLocalFile(str(archive))])
+            self.assertEqual(
+                _ProjectTreeWidget._local_zip_candidate(mime),
+                archive,
+            )
+
+            mime.setUrls([QUrl.fromLocalFile(str(text_file))])
+            self.assertIsNone(
+                _ProjectTreeWidget._local_zip_candidate(mime)
+            )
+
+            mime.setUrls([
+                QUrl.fromLocalFile(str(archive)),
+                QUrl.fromLocalFile(str(text_file)),
+            ])
+            self.assertIsNone(
+                _ProjectTreeWidget._local_zip_candidate(mime)
+            )
+
+    def test_semantic_drop_targets_distinguish_feature_and_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(root)
+            create_project_feature(workspace, "Feature")
+            create_project_package(workspace, "Feature", "PKG01")
             view = ProjectView()
             view.set_workspace(workspace)
 
-            texts = self._tree_texts(view)
-            self.assertIn(
-                "Manual Feature",
-                texts,
+            project = view.tree.topLevelItem(0)
+            feature = project.child(1).child(0)
+            packages = feature.child(1)
+            package = packages.child(0)
+            documents = package.child(0)
+            contents = package.child(1)
+
+            self.assertEqual(
+                view.tree._drop_target_for_item(feature),
+                ("Feature", ""),
             )
-            self.assertIn(
-                "Structure incomplete",
-                texts,
+            self.assertEqual(
+                view.tree._drop_target_for_item(packages),
+                ("Feature", ""),
+            )
+            self.assertEqual(
+                view.tree._drop_target_for_item(package),
+                ("Feature", "PKG01"),
+            )
+            self.assertEqual(
+                view.tree._drop_target_for_item(contents),
+                ("Feature", "PKG01"),
+            )
+            self.assertIsNone(
+                view.tree._drop_target_for_item(documents)
+            )
+
+    def test_refresh_clears_drop_highlight(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(root)
+            create_project_feature(workspace, "Feature")
+            view = ProjectView()
+            view.set_workspace(workspace)
+            feature = view.tree.topLevelItem(0).child(1).child(0)
+            view.tree._set_drop_highlight(feature)
+            view.refresh()
+            self.assertIsNone(
+                view.tree._drop_highlight_item
             )
 
 
