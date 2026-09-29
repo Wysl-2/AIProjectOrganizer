@@ -4,6 +4,10 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from ai_project_organizer.workspace_structure import (
+    initialize_project_workspace_structure,
+)
+
 
 PROJECT_METADATA_FILENAME = ".aiproject.json"
 PROJECT_METADATA_SCHEMA_VERSION = 1
@@ -208,20 +212,51 @@ def create_project_workspace(
         )
 
     workspace.mkdir()
+    metadata_saved = False
 
     try:
         save_project_metadata(
             workspace,
             metadata,
         )
+        metadata_saved = True
+
+        initialize_project_workspace_structure(
+            workspace
+        )
     except (ProjectMetadataError, OSError):
-        try:
-            workspace.rmdir()
-        except OSError:
-            pass
+        _cleanup_failed_project_creation(
+            workspace,
+            remove_metadata=metadata_saved,
+        )
         raise
 
     return workspace
+
+
+def _cleanup_failed_project_creation(
+    workspace: Path,
+    *,
+    remove_metadata: bool,
+) -> None:
+    if remove_metadata:
+        metadata_path = _metadata_path(
+            workspace
+        )
+
+        if (
+                not metadata_path.is_symlink()
+                and metadata_path.is_file()
+        ):
+            try:
+                metadata_path.unlink()
+            except OSError:
+                pass
+
+    try:
+        workspace.rmdir()
+    except OSError:
+        pass
 
 
 def _metadata_path(workspace_path: str | Path) -> Path:

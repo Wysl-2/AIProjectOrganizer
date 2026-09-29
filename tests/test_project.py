@@ -486,6 +486,12 @@ class ProjectMetadataTests(unittest.TestCase):
                 load_project_metadata(workspace),
                 metadata,
             )
+            self.assertTrue(
+                (workspace / "Documents").is_dir()
+            )
+            self.assertTrue(
+                (workspace / "Features").is_dir()
+            )
 
     def test_create_project_workspace_rejects_existing_target(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -604,6 +610,26 @@ class ProjectMetadataTests(unittest.TestCase):
             self.assertEqual(
                 (workspace / "marker.txt").read_text(encoding="utf-8"),
                 "preserve",
+            )
+
+    def test_failed_workspace_structure_initialization_cleans_created_project(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory) / "project"
+
+            with patch(
+                "ai_project_organizer.project.initialize_project_workspace_structure",
+                side_effect=PermissionError(
+                    "permission denied"
+                ),
+            ):
+                with self.assertRaises(PermissionError):
+                    create_project_workspace(
+                        workspace,
+                        self._metadata(),
+                    )
+
+            self.assertFalse(
+                workspace.exists()
             )
 
 

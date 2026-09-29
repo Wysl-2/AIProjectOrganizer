@@ -69,6 +69,30 @@ class WorkspaceProjectIntegrationTests(unittest.TestCase):
             self.assertEqual(self.window.project_metadata, metadata)
             self.assertIsNone(self.window.project_metadata_load_error)
 
+    def test_opening_existing_project_does_not_initialize_standard_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            metadata = self._metadata(workspace)
+
+            save_project_metadata(
+                workspace,
+                metadata,
+            )
+            self.window._set_workspace_root(
+                str(workspace)
+            )
+
+            self.assertEqual(
+                self.window.project_metadata,
+                metadata,
+            )
+            self.assertFalse(
+                (workspace / "Documents").exists()
+            )
+            self.assertFalse(
+                (workspace / "Features").exists()
+            )
+
     def test_workspace_without_metadata_remains_unconfigured(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             workspace = Path(temporary_directory)
