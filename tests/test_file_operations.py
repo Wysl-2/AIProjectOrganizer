@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -208,6 +209,105 @@ class FileOperationBoundaryTests(unittest.TestCase):
             outside.read_text(encoding="utf-8"),
             "outside",
         )
+
+    def test_partial_move_failure_rebases_current_document(self) -> None:
+        folder = self.workspace / "folder"
+        folder.mkdir()
+        document = folder / "document.txt"
+        document.write_text(
+            "on disk",
+            encoding="utf-8",
+        )
+        other = self.workspace / "other.txt"
+        other.write_text(
+            "other",
+            encoding="utf-8",
+        )
+        destination = self.workspace / "destination"
+        destination.mkdir()
+
+        self.window.current_file_path = str(
+            document
+        )
+        self.window.text_editor.setPlainText(
+            "unsaved editor text"
+        )
+        self.window.text_editor.document().setModified(
+            True
+        )
+
+        move_plan = [
+            (
+                folder,
+                destination / "folder",
+            ),
+            (
+                other,
+                destination / "other.txt",
+            ),
+        ]
+        real_move = shutil.move
+        call_count = 0
+
+        def controlled_move(
+                source: str,
+                target: str,
+        ):
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 2:
+                raise PermissionError(
+                    "permission denied"
+                )
+
+            return real_move(
+                source,
+                target,
+            )
+
+        with (
+            patch(
+                "ai_project_organizer.ui.file_tree.shutil.move",
+                side_effect=controlled_move,
+            ),
+            patch.object(
+                QMessageBox,
+                "warning",
+            ) as warning,
+        ):
+            result = self.window.file_tree._execute_move_plan(
+                move_plan
+            )
+
+        moved_document = (
+            destination
+            / "folder"
+            / "document.txt"
+        )
+
+        self.assertFalse(result)
+        self.assertTrue(
+            moved_document.is_file()
+        )
+        self.assertFalse(
+            document.exists()
+        )
+        self.assertTrue(
+            other.is_file()
+        )
+        self.assertEqual(
+            self.window.current_file_path,
+            str(moved_document),
+        )
+        self.assertEqual(
+            self.window.text_editor.toPlainText(),
+            "unsaved editor text",
+        )
+        self.assertTrue(
+            self.window.text_editor.document().isModified()
+        )
+        warning.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -287,11 +287,7 @@ class FileTreeView(QTreeView):
             event.ignore()
             return
 
-        sources = self._remove_nested_sources(
-            sources
-        )
-
-        error = self._validate_move(
+        move_plan, error = self._build_move_plan(
             sources,
             target_directory,
         )
@@ -301,40 +297,11 @@ class FileTreeView(QTreeView):
             event.ignore()
             return
 
-        moved_paths: dict[str, str] = {}
-
-        try:
-            for source in sources:
-                destination = (
-                        target_directory / source.name
-                )
-
-                if same_path_entry(
-                        destination,
-                        source,
-                ):
-                    continue
-
-                shutil.move(
-                    str(source),
-                    str(destination),
-                )
-
-                moved_paths[str(source)] = str(
-                    destination
-                )
-
-        except OSError as error:
-            self.move_failed.emit(
-                f"Could not move the item:\n\n{error}"
-            )
+        if not self._execute_move_plan(
+                move_plan
+        ):
             event.ignore()
             return
-
-        if moved_paths:
-            self.paths_moved.emit(
-                moved_paths
-            )
 
         event.setDropAction(
             Qt.DropAction.MoveAction
@@ -375,11 +342,11 @@ class FileTreeView(QTreeView):
             target_directory: Path,
     ) -> bool:
         return (
-                self._validate_move(
-                    sources,
-                    target_directory,
-                )
-                is None
+            self._validate_move(
+                sources,
+                target_directory,
+            )
+            is None
         )
 
     def _validate_move(
@@ -387,8 +354,19 @@ class FileTreeView(QTreeView):
             sources: list[Path],
             target_directory: Path,
     ) -> str | None:
+        _move_plan, error = self._build_move_plan(
+            sources,
+            target_directory,
+        )
+        return error
+
+    def _build_move_plan(
+            self,
+            sources: list[Path],
+            target_directory: Path,
+    ) -> tuple[list[tuple[Path, Path]], str | None]:
         if self.workspace_path is None:
-            return "No workspace is open."
+            return [], "No workspace is open."
 
         if (
                 not filesystem_entry_exists(
@@ -396,23 +374,29 @@ class FileTreeView(QTreeView):
                 )
                 or not target_directory.is_dir()
         ):
-            return (
-                "The destination is not a folder."
-            )
+            return [], "The destination is not a folder."
 
         if not is_workspace_target(
                 target_directory,
                 self.workspace_path,
         ):
             return (
-                "Files cannot be moved outside "
-                "the current workspace."
+                [],
+                (
+                    "Files cannot be moved outside "
+                    "the current workspace."
+                ),
             )
 
-        for source in sources:
+        move_plan: list[tuple[Path, Path]] = []
+
+        for source in self._remove_nested_sources(
+                sources
+        ):
             if not filesystem_entry_exists(source):
                 return (
-                    f"'{source.name}' no longer exists."
+                    [],
+                    f"'{source.name}' no longer exists.",
                 )
 
             if not is_workspace_entry(
@@ -420,8 +404,11 @@ class FileTreeView(QTreeView):
                     self.workspace_path,
             ):
                 return (
-                    "Files cannot be moved from outside "
-                    "the current workspace."
+                    [],
+                    (
+                        "Files cannot be moved from outside "
+                        "the current workspace."
+                    ),
                 )
 
             destination = (
@@ -438,8 +425,26 @@ class FileTreeView(QTreeView):
                     destination
             ):
                 return (
-                    f"'{destination.name}' already exists "
-                    "in the destination folder."
+                    [],
+                    (
+                        f"'{destination.name}' already exists "
+                        "in the destination folder."
+                    ),
+                )
+
+            if any(
+                    same_path_entry(
+                        destination,
+                        planned_destination,
+                    )
+                    for _planned_source, planned_destination in move_plan
+            ):
+                return (
+                    [],
+                    (
+                        "Multiple selected items would be moved "
+                        f"to '{destination.name}'."
+                    ),
                 )
 
             if (
@@ -454,11 +459,55 @@ class FileTreeView(QTreeView):
                     pass
                 else:
                     return (
-                        "A folder cannot be moved "
-                        "inside itself."
+                        [],
+                        (
+                            "A folder cannot be moved "
+                            "inside itself."
+                        ),
                     )
 
-        return None
+            move_plan.append(
+                (
+                    source,
+                    destination,
+                )
+            )
+
+        return move_plan, None
+
+    def _execute_move_plan(
+            self,
+            move_plan: list[tuple[Path, Path]],
+    ) -> bool:
+        moved_paths: dict[str, str] = {}
+
+        for source, destination in move_plan:
+            try:
+                shutil.move(
+                    str(source),
+                    str(destination),
+                )
+            except OSError as error:
+                if moved_paths:
+                    self.paths_moved.emit(
+                        moved_paths
+                    )
+
+                self.move_failed.emit(
+                    f"Could not move the item:\n\n{error}"
+                )
+                return False
+
+            moved_paths[str(source)] = str(
+                destination
+            )
+
+        if moved_paths:
+            self.paths_moved.emit(
+                moved_paths
+            )
+
+        return True
 
     def _remove_nested_sources(
             self,
@@ -466,7 +515,10 @@ class FileTreeView(QTreeView):
     ) -> list[Path]:
         ordered = sorted(
             set(sources),
-            key=lambda path: len(path.parts),
+            key=lambda path: (
+                len(path.parts),
+                str(path),
+            ),
         )
 
         filtered: list[Path] = []
