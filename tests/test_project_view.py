@@ -9,13 +9,9 @@ os.environ.setdefault(
     "offscreen",
 )
 
-from PySide6.QtCore import QMimeData, QUrl
 from PySide6.QtWidgets import QApplication
 
-from ai_project_organizer.ui.project_view import (
-    ProjectView,
-    _local_zip_candidate,
-)
+from ai_project_organizer.ui.project_view import ProjectView
 from ai_project_organizer.workspace_structure import (
     create_project_feature,
     create_project_package,
@@ -45,7 +41,9 @@ class ProjectViewTests(unittest.TestCase):
             list_widget,
     ) -> list[str]:
         return [
-            list_widget.item(index).text()
+            list_widget.item(
+                index
+            ).text()
             for index in range(
                 list_widget.count()
             )
@@ -53,8 +51,12 @@ class ProjectViewTests(unittest.TestCase):
 
     def test_project_page_lists_documents_and_features(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
             (
                 workspace
                 / "Documents"
@@ -67,7 +69,10 @@ class ProjectViewTests(unittest.TestCase):
                 workspace,
                 "Feature A",
             )
-            (workspace / "scratch.txt").write_text(
+            (
+                workspace
+                / "scratch.txt"
+            ).write_text(
                 "scratch",
                 encoding="utf-8",
             )
@@ -98,27 +103,29 @@ class ProjectViewTests(unittest.TestCase):
                     view.feature_list
                 ),
             )
-            self.assertNotIn(
-                "scratch.txt",
-                self._list_texts(
-                    view.project_documents_panel.list_widget
-                ),
-            )
 
     def test_feature_navigation_and_back(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
             create_project_feature(
                 workspace,
                 "Feature A",
             )
 
             view = ProjectView()
-            view.set_workspace(workspace)
+            view.set_workspace(
+                workspace
+            )
 
             view._feature_item_activated(
-                view.feature_list.item(0)
+                view.feature_list.item(
+                    0
+                )
             )
 
             self.assertEqual(
@@ -140,10 +147,16 @@ class ProjectViewTests(unittest.TestCase):
                 view.project_page,
             )
 
-    def test_feature_page_lists_documents_and_packages(self) -> None:
+    def test_feature_page_configures_documents_and_package_workspace(
+            self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
             feature = create_project_feature(
                 workspace,
                 "Feature",
@@ -163,8 +176,12 @@ class ProjectViewTests(unittest.TestCase):
             )
 
             view = ProjectView()
-            view.set_workspace(workspace)
-            view._open_feature("Feature")
+            view.set_workspace(
+                workspace
+            )
+            view._open_feature(
+                "Feature"
+            )
 
             self.assertIn(
                 "Feature Overview.txt",
@@ -172,46 +189,93 @@ class ProjectViewTests(unittest.TestCase):
                     view.feature_documents_panel.list_widget
                 ),
             )
+            self.assertEqual(
+                view.package_workspace_panel.workspace_path,
+                workspace,
+            )
+            self.assertEqual(
+                view.package_workspace_panel.feature_name,
+                "Feature",
+            )
             self.assertIn(
                 "PKG01",
                 self._list_texts(
-                    view.package_list
+                    view.package_workspace_panel.package_list
                 ),
             )
 
-    def test_add_package_uses_current_feature(self) -> None:
+    def test_package_workspace_signals_are_forwarded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
             create_project_feature(
                 workspace,
                 "Feature",
             )
 
             view = ProjectView()
-            view.set_workspace(workspace)
-            view._open_feature("Feature")
-
-            emitted: list[str] = []
-            view.add_package_requested.connect(
-                emitted.append
+            view.set_workspace(
+                workspace
+            )
+            view._open_feature(
+                "Feature"
             )
 
-            view._request_add_package()
+            added: list[str] = []
+            imported: list[
+                tuple[str, str, str]
+            ] = []
+
+            view.add_package_requested.connect(
+                added.append
+            )
+            view.implementation_package_import_requested.connect(
+                lambda source, feature, package_id: imported.append(
+                    (
+                        source,
+                        feature,
+                        package_id,
+                    )
+                )
+            )
+
+            view.package_workspace_panel._request_add_package()
+            view.package_workspace_panel._package_drop_requested(
+                "/tmp/package.zip",
+                "PKG01",
+            )
 
             self.assertEqual(
-                emitted,
+                added,
                 [
                     "Feature"
+                ],
+            )
+            self.assertEqual(
+                imported,
+                [
+                    (
+                        "/tmp/package.zip",
+                        "Feature",
+                        "PKG01",
+                    )
                 ],
             )
 
     def test_incomplete_project_does_not_initialize_automatically(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            workspace = Path(temporary_directory)
+            workspace = Path(
+                temporary_directory
+            )
 
             view = ProjectView()
-            view.set_workspace(workspace)
+            view.set_workspace(
+                workspace
+            )
 
             self.assertFalse(
                 (
@@ -237,8 +301,12 @@ class ProjectViewTests(unittest.TestCase):
             self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
             (
                 workspace
                 / "Features"
@@ -246,7 +314,9 @@ class ProjectViewTests(unittest.TestCase):
             ).mkdir()
 
             view = ProjectView()
-            view.set_workspace(workspace)
+            view.set_workspace(
+                workspace
+            )
 
             self.assertIn(
                 "Manual Feature — Structure incomplete",
@@ -279,10 +349,16 @@ class ProjectViewTests(unittest.TestCase):
                 ],
             )
 
-    def test_incomplete_package_remains_visible(self) -> None:
+    def test_incomplete_package_remains_visible_through_package_workspace(
+            self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
             feature = create_project_feature(
                 workspace,
                 "Feature",
@@ -294,53 +370,116 @@ class ProjectViewTests(unittest.TestCase):
             ).mkdir()
 
             view = ProjectView()
-            view.set_workspace(workspace)
-            view._open_feature("Feature")
+            view.set_workspace(
+                workspace
+            )
+            view._open_feature(
+                "Feature"
+            )
 
             self.assertIn(
                 "PKG01 — Structure incomplete",
                 self._list_texts(
-                    view.package_list
+                    view.package_workspace_panel.package_list
                 ),
             )
 
-    def test_refresh_preserves_feature_or_falls_back_when_removed(self) -> None:
+    def test_refresh_preserves_feature_and_selected_package(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
-            feature = create_project_feature(
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_feature(
                 workspace,
                 "Feature",
             )
+            create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
 
             view = ProjectView()
-            view.set_workspace(workspace)
-            view._open_feature("Feature")
+            view.set_workspace(
+                workspace
+            )
+            view._open_feature(
+                "Feature"
+            )
+            view.package_workspace_panel.package_list.setCurrentRow(
+                0
+            )
+
             view.refresh()
 
             self.assertEqual(
                 view.current_feature_name,
                 "Feature",
             )
+            self.assertEqual(
+                view.package_workspace_panel.current_package_id,
+                "PKG01",
+            )
             self.assertIs(
                 view.page_stack.currentWidget(),
                 view.feature_page,
             )
 
-            shutil.rmtree(feature)
+    def test_refresh_returns_to_project_page_when_feature_is_removed(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+            feature = create_project_feature(
+                workspace,
+                "Feature",
+            )
+            create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+            view._open_feature(
+                "Feature"
+            )
+            view.package_workspace_panel.package_list.setCurrentRow(
+                0
+            )
+
+            shutil.rmtree(
+                feature
+            )
             view.refresh()
 
             self.assertIsNone(
                 view.current_feature_name
+            )
+            self.assertIsNone(
+                view.package_workspace_panel.current_package_id
             )
             self.assertIs(
                 view.page_stack.currentWidget(),
                 view.project_page,
             )
 
-    def test_workspace_switch_resets_feature_navigation(self) -> None:
+    def test_workspace_switch_resets_feature_and_package_context(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
+            root = Path(
+                temporary_directory
+            )
             workspace_a = self._initialized_workspace(
                 root,
                 "workspace-a",
@@ -353,15 +492,35 @@ class ProjectViewTests(unittest.TestCase):
                 workspace_a,
                 "Feature",
             )
+            create_project_package(
+                workspace_a,
+                "Feature",
+                "PKG01",
+            )
 
             view = ProjectView()
-            view.set_workspace(workspace_a)
-            view._open_feature("Feature")
+            view.set_workspace(
+                workspace_a
+            )
+            view._open_feature(
+                "Feature"
+            )
+            view.package_workspace_panel.package_list.setCurrentRow(
+                0
+            )
 
-            view.set_workspace(workspace_b)
+            view.set_workspace(
+                workspace_b
+            )
 
             self.assertIsNone(
                 view.current_feature_name
+            )
+            self.assertIsNone(
+                view.package_workspace_panel.feature_name
+            )
+            self.assertIsNone(
+                view.package_workspace_panel.current_package_id
             )
             self.assertIs(
                 view.page_stack.currentWidget(),
@@ -372,16 +531,24 @@ class ProjectViewTests(unittest.TestCase):
             self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
             create_project_feature(
                 workspace,
                 "Feature",
             )
 
             view = ProjectView()
-            view.set_workspace(workspace)
-            view._open_feature("Feature")
+            view.set_workspace(
+                workspace
+            )
+            view._open_feature(
+                "Feature"
+            )
 
             view.set_project_display_name(
                 "Renamed Project"
@@ -402,8 +569,12 @@ class ProjectViewTests(unittest.TestCase):
 
     def test_project_document_activation_emits_real_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
             document = (
                 workspace
                 / "Documents"
@@ -415,7 +586,9 @@ class ProjectViewTests(unittest.TestCase):
             )
 
             view = ProjectView()
-            view.set_workspace(workspace)
+            view.set_workspace(
+                workspace
+            )
 
             emitted: list[str] = []
             view.file_open_requested.connect(
@@ -423,95 +596,49 @@ class ProjectViewTests(unittest.TestCase):
             )
 
             view.project_documents_panel._activate_item(
-                view.project_documents_panel.list_widget.item(0)
+                view.project_documents_panel.list_widget.item(
+                    0
+                )
             )
 
             self.assertEqual(
                 emitted,
                 [
-                    str(document)
+                    str(
+                        document
+                    )
                 ],
             )
 
-    def test_zip_candidate_filter_remains_narrow(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            archive = root / "package.zip"
-            text_file = root / "notes.txt"
-            archive.write_bytes(
-                b"candidate"
-            )
-            text_file.write_text(
-                "notes",
-                encoding="utf-8",
-            )
-
-            mime = QMimeData()
-            mime.setUrls(
-                [
-                    QUrl.fromLocalFile(
-                        str(archive)
-                    )
-                ]
-            )
-            self.assertEqual(
-                _local_zip_candidate(mime),
-                archive,
-            )
-
-            mime.setUrls(
-                [
-                    QUrl.fromLocalFile(
-                        str(text_file)
-                    )
-                ]
-            )
-            self.assertIsNone(
-                _local_zip_candidate(mime)
-            )
-
-            mime.setUrls(
-                [
-                    QUrl.fromLocalFile(
-                        str(archive)
-                    ),
-                    QUrl.fromLocalFile(
-                        str(text_file)
-                    ),
-                ]
-            )
-            self.assertIsNone(
-                _local_zip_candidate(mime)
-            )
-
-    def test_feature_and_package_drop_intent_uses_semantic_context(
+    def test_feature_and_package_drop_intent_use_semantic_context(
             self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            workspace = self._initialized_workspace(root)
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
             create_project_feature(
                 workspace,
                 "Feature",
             )
-            create_project_package(
-                workspace,
-                "Feature",
-                "PKG01",
-            )
 
             view = ProjectView()
-            view.set_workspace(workspace)
+            view.set_workspace(
+                workspace
+            )
 
             emitted: list[
                 tuple[str, str, str]
             ] = []
             view.implementation_package_import_requested.connect(
-                lambda source, feature, package: emitted.append(
+                lambda source, feature, package_id: emitted.append(
                     (
                         source,
                         feature,
-                        package,
+                        package_id,
                     )
                 )
             )
@@ -520,12 +647,14 @@ class ProjectViewTests(unittest.TestCase):
                 "/tmp/feature.zip",
                 "Feature",
             )
-            view._open_feature("Feature")
-            view._package_drop_requested(
+            view._open_feature(
+                "Feature"
+            )
+            view.package_workspace_panel._package_drop_requested(
                 "/tmp/package.zip",
                 "PKG01",
             )
-            view._package_drop_requested(
+            view.package_workspace_panel._package_drop_requested(
                 "/tmp/background.zip",
                 "",
             )

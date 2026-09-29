@@ -109,7 +109,8 @@ class PackageInstallUiTests(unittest.TestCase):
                 "Feature"
             )
 
-            package_item = view.package_list.item(
+            panel = view.package_workspace_panel
+            package_item = panel.package_list.item(
                 0
             )
             emitted: list[
@@ -126,16 +127,16 @@ class PackageInstallUiTests(unittest.TestCase):
 
             with (
                 patch(
-                    "ai_project_organizer.ui.project_view.QMenu",
+                    "ai_project_organizer.ui.package_workspace_panel.QMenu",
                     _InstallSelectingMenu,
                 ),
                 patch.object(
-                    view.package_list,
+                    panel.package_list,
                     "itemAt",
                     return_value=package_item,
                 ),
             ):
-                view._show_package_context_menu(
+                panel._show_package_context_menu(
                     QPoint(
                         0,
                         0,
