@@ -126,6 +126,10 @@ class MainWindow(QMainWindow):
             self._show_move_error
         )
 
+        self.file_tree.import_failed.connect(
+            self._show_import_error
+        )
+
         self.text_editor = TextEditor()
 
         self.text_editor.document().modificationChanged.connect(
@@ -1618,6 +1622,16 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(
             self,
             "Unable to Move Item",
+            message,
+        )
+
+    def _show_import_error(
+            self,
+            message: str,
+    ) -> None:
+        QMessageBox.warning(
+            self,
+            "Unable to Import Item",
             message,
         )
 
