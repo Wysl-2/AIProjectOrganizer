@@ -20,6 +20,7 @@ from ai_project_organizer.ui.package_workspace_panel import (
 from ai_project_organizer.workspace_structure import (
     create_project_feature,
     create_project_package,
+    initialize_project_package_structure,
     initialize_project_workspace_structure,
 )
 
@@ -216,6 +217,89 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             self.assertIs(
                 panel.details_stack.currentWidget(),
                 panel.no_selection_page,
+            )
+            self.assertIn(
+                "Select a Package",
+                panel.no_selection_label.text(),
+            )
+
+    def test_empty_feature_shows_no_packages_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._workspace(
+                root
+            )
+
+            panel = PackageWorkspacePanel()
+            panel.set_feature(
+                workspace,
+                "Feature",
+            )
+
+            self.assertEqual(
+                panel.package_list.count(),
+                0,
+            )
+            self.assertFalse(
+                panel.status_label.isHidden()
+            )
+            self.assertIn(
+                "No Packages",
+                panel.status_label.text(),
+            )
+            self.assertIn(
+                "Create a Package",
+                panel.no_selection_label.text(),
+            )
+            self.assertTrue(
+                panel.add_package_button.isEnabled()
+            )
+
+    def test_no_packages_state_clears_after_package_is_created(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._workspace(
+                root
+            )
+
+            panel = PackageWorkspacePanel()
+            panel.set_feature(
+                workspace,
+                "Feature",
+            )
+
+            create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+            panel.refresh()
+
+            self.assertTrue(
+                panel.status_label.isHidden()
+            )
+            self.assertEqual(
+                panel.status_label.text(),
+                "",
+            )
+            self.assertIn(
+                "PKG01",
+                self._list_texts(
+                    panel
+                ),
+            )
+            self.assertIsNone(
+                panel.current_package_id
+            )
+            self.assertIn(
+                "Select a Package",
+                panel.no_selection_label.text(),
             )
 
     def test_selection_displays_package_documents(self) -> None:
@@ -558,6 +642,14 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 "permission denied",
                 panel.artifact_error_label.text(),
             )
+            self.assertEqual(
+                panel.archive_status_label.text(),
+                "",
+            )
+            self.assertEqual(
+                panel.extracted_status_label.text(),
+                "",
+            )
             self.assertTrue(
                 panel.import_package_button.isEnabled()
             )
@@ -569,6 +661,49 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
             self.assertFalse(
                 panel.install_package_button.isEnabled()
+            )
+
+    def test_artifact_error_clears_after_successful_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, _package = self._panel_with_package(
+                root
+            )
+
+            with patch(
+                "ai_project_organizer.ui.package_workspace_panel.discover_implementation_package_archives",
+                side_effect=OSError(
+                    "temporary failure"
+                ),
+            ):
+                panel._refresh_selected_package()
+
+            self.assertFalse(
+                panel.artifact_error_label.isHidden()
+            )
+            self.assertIn(
+                "temporary failure",
+                panel.artifact_error_label.text(),
+            )
+
+            panel.refresh()
+
+            self.assertTrue(
+                panel.artifact_error_label.isHidden()
+            )
+            self.assertEqual(
+                panel.artifact_error_label.text(),
+                "",
+            )
+            self.assertEqual(
+                panel.archive_status_label.text(),
+                "ZIP: None",
+            )
+            self.assertEqual(
+                panel.extracted_status_label.text(),
+                "Extracted: None",
             )
 
     def test_import_cancel_emits_nothing(self) -> None:
@@ -799,6 +934,57 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 ],
             )
 
+    def test_incomplete_package_transitions_to_complete_without_losing_selection(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._workspace(
+                root
+            )
+            package = (
+                workspace
+                / "Features"
+                / "Feature"
+                / "Packages"
+                / "PKG01"
+            )
+            package.mkdir()
+
+            panel = PackageWorkspacePanel()
+            panel.set_feature(
+                workspace,
+                "Feature",
+            )
+            panel.package_list.setCurrentRow(
+                0
+            )
+
+            initialize_project_package_structure(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+            panel.refresh()
+
+            self.assertEqual(
+                panel.current_package_id,
+                "PKG01",
+            )
+            self.assertIs(
+                panel.details_stack.currentWidget(),
+                panel.package_details_page,
+            )
+            self.assertEqual(
+                panel.package_documents_panel.directory_path,
+                package / "Documents",
+            )
+            self.assertTrue(
+                panel.import_package_button.isEnabled()
+            )
+
     def test_refresh_preserves_existing_selection_and_clears_removed_package(
             self,
     ) -> None:
@@ -809,12 +995,20 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             panel, _workspace, package = self._panel_with_package(
                 root
             )
-
+            contents = package / "Contents"
+            self._write_valid_archive(
+                contents / "package.zip",
+                "PackageArchive",
+            )
             panel.refresh()
 
             self.assertEqual(
                 panel.current_package_id,
                 "PKG01",
+            )
+            self.assertEqual(
+                panel.archive_status_label.text(),
+                "ZIP: package.zip",
             )
 
             shutil.rmtree(
@@ -828,6 +1022,28 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             self.assertIs(
                 panel.details_stack.currentWidget(),
                 panel.no_selection_page,
+            )
+            self.assertEqual(
+                panel.package_title_label.text(),
+                "",
+            )
+            self.assertIsNone(
+                panel.package_documents_panel.directory_path
+            )
+            self.assertEqual(
+                panel.archive_status_label.text(),
+                "",
+            )
+            self.assertEqual(
+                panel.extracted_status_label.text(),
+                "",
+            )
+            self.assertTrue(
+                panel.artifact_error_label.isHidden()
+            )
+            self.assertEqual(
+                panel.artifact_error_label.text(),
+                "",
             )
             self.assertFalse(
                 panel.import_package_button.isEnabled()
@@ -843,6 +1059,10 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
             self.assertFalse(
                 panel.open_contents_button.isEnabled()
+            )
+            self.assertIn(
+                "Create a Package",
+                panel.no_selection_label.text(),
             )
 
     def test_feature_change_clears_package_selection(self) -> None:
@@ -893,6 +1113,58 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             self.assertIs(
                 panel.details_stack.currentWidget(),
                 panel.no_selection_page,
+            )
+
+    def test_package_discovery_error_clears_selection_and_details(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, _package = self._panel_with_package(
+                root
+            )
+
+            with patch(
+                "ai_project_organizer.ui.package_workspace_panel.discover_feature_packages",
+                side_effect=OSError(
+                    "permission denied"
+                ),
+            ):
+                panel.refresh()
+
+            self.assertIsNone(
+                panel.current_package_id
+            )
+            self.assertEqual(
+                panel.package_list.count(),
+                0,
+            )
+            self.assertIn(
+                "Unable to discover Packages",
+                panel.status_label.text(),
+            )
+            self.assertIn(
+                "unavailable",
+                panel.no_selection_label.text(),
+            )
+            self.assertEqual(
+                panel.package_title_label.text(),
+                "",
+            )
+            self.assertFalse(
+                panel.import_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.extract_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.inspect_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.install_package_button.isEnabled()
+            )
+            self.assertFalse(
+                panel.open_contents_button.isEnabled()
             )
 
     def test_context_menu_no_longer_contains_primary_workflow_actions(

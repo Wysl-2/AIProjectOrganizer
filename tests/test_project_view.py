@@ -3,26 +3,83 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault(
     "QT_QPA_PLATFORM",
     "offscreen",
 )
 
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication
 
 from ai_project_organizer.ui.project_view import ProjectView
 from ai_project_organizer.workspace_structure import (
     create_project_feature,
     create_project_package,
+    initialize_project_feature_structure,
     initialize_project_workspace_structure,
 )
+
+
+class _FakeAction:
+    def __init__(
+            self,
+            text: str,
+    ) -> None:
+        self.text = text
+
+
+class _RecordingMenu:
+    latest_actions: list[str] = []
+    selected_text: str | None = None
+
+    def __init__(
+            self,
+            _parent=None,
+    ) -> None:
+        self._actions: list[_FakeAction] = []
+        type(self).latest_actions = []
+
+    def addAction(
+            self,
+            text: str,
+    ) -> _FakeAction:
+        action = _FakeAction(
+            text
+        )
+        self._actions.append(
+            action
+        )
+        type(self).latest_actions.append(
+            text
+        )
+        return action
+
+    def addSeparator(self) -> None:
+        pass
+
+    def actions(self) -> list[_FakeAction]:
+        return self._actions
+
+    def exec(
+            self,
+            _position,
+    ) -> _FakeAction | None:
+        for action in self._actions:
+            if action.text == type(self).selected_text:
+                return action
+
+        return None
 
 
 class ProjectViewTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.application = QApplication.instance() or QApplication([])
+
+    def tearDown(self) -> None:
+        _RecordingMenu.selected_text = None
 
     def _initialized_workspace(
             self,
@@ -96,6 +153,71 @@ class ProjectViewTests(unittest.TestCase):
                 self._list_texts(
                     view.project_documents_panel.list_widget
                 ),
+            )
+            self.assertIn(
+                "Feature A",
+                self._list_texts(
+                    view.feature_list
+                ),
+            )
+
+    def test_empty_project_shows_no_features_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+
+            self.assertEqual(
+                view.feature_list.count(),
+                0,
+            )
+            self.assertFalse(
+                view.features_status_label.isHidden()
+            )
+            self.assertIn(
+                "No Features",
+                view.features_status_label.text(),
+            )
+            self.assertTrue(
+                view.add_feature_button.isEnabled()
+            )
+
+    def test_features_empty_state_clears_after_feature_is_created(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+
+            create_project_feature(
+                workspace,
+                "Feature A",
+            )
+            view.refresh()
+
+            self.assertTrue(
+                view.features_status_label.isHidden()
+            )
+            self.assertEqual(
+                view.features_status_label.text(),
+                "",
             )
             self.assertIn(
                 "Feature A",
@@ -290,7 +412,7 @@ class ProjectViewTests(unittest.TestCase):
                 ).exists()
             )
             self.assertIn(
-                "standard Project structure",
+                "Project structure incomplete",
                 view.status_label.text(),
             )
             self.assertTrue(
@@ -336,7 +458,7 @@ class ProjectViewTests(unittest.TestCase):
             view._request_feature_initialization()
 
             self.assertIn(
-                "missing its standard",
+                "Feature structure incomplete",
                 view.feature_status_label.text(),
             )
             self.assertTrue(
@@ -347,6 +469,59 @@ class ProjectViewTests(unittest.TestCase):
                 [
                     "Manual Feature"
                 ],
+            )
+
+    def test_incomplete_feature_transitions_to_normal_workspace_after_initialization(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+            (
+                workspace
+                / "Features"
+                / "Manual Feature"
+            ).mkdir()
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+            view._open_feature(
+                "Manual Feature"
+            )
+
+            self.assertTrue(
+                view.feature_splitter.isHidden()
+            )
+
+            initialize_project_feature_structure(
+                workspace,
+                "Manual Feature",
+            )
+            view.refresh()
+
+            self.assertEqual(
+                view.current_feature_name,
+                "Manual Feature",
+            )
+            self.assertIs(
+                view.page_stack.currentWidget(),
+                view.feature_page,
+            )
+            self.assertFalse(
+                view.feature_splitter.isHidden()
+            )
+            self.assertTrue(
+                view.feature_status_label.isHidden()
+            )
+            self.assertEqual(
+                view.package_workspace_panel.feature_name,
+                "Manual Feature",
             )
 
     def test_incomplete_package_remains_visible_through_package_workspace(
@@ -607,6 +782,121 @@ class ProjectViewTests(unittest.TestCase):
                     str(
                         document
                     )
+                ],
+            )
+
+    def test_feature_context_menu_has_utility_actions_for_complete_feature(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_feature(
+                workspace,
+                "Feature",
+            )
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+            item = view.feature_list.item(
+                0
+            )
+
+            with (
+                patch(
+                    "ai_project_organizer.ui.project_view.QMenu",
+                    _RecordingMenu,
+                ),
+                patch.object(
+                    view.feature_list,
+                    "itemAt",
+                    return_value=item,
+                ),
+            ):
+                view._show_feature_context_menu(
+                    QPoint(
+                        0,
+                        0,
+                    )
+                )
+
+            self.assertIn(
+                "Copy Path",
+                _RecordingMenu.latest_actions,
+            )
+            self.assertIn(
+                "Open in File Manager",
+                _RecordingMenu.latest_actions,
+            )
+            self.assertNotIn(
+                "Initialize Feature Structure...",
+                _RecordingMenu.latest_actions,
+            )
+
+    def test_incomplete_feature_context_menu_can_request_initialization(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+            (
+                workspace
+                / "Features"
+                / "Manual Feature"
+            ).mkdir()
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+            item = view.feature_list.item(
+                0
+            )
+
+            emitted: list[str] = []
+            view.initialize_feature_requested.connect(
+                emitted.append
+            )
+            _RecordingMenu.selected_text = (
+                "Initialize Feature Structure..."
+            )
+
+            with (
+                patch(
+                    "ai_project_organizer.ui.project_view.QMenu",
+                    _RecordingMenu,
+                ),
+                patch.object(
+                    view.feature_list,
+                    "itemAt",
+                    return_value=item,
+                ),
+            ):
+                view._show_feature_context_menu(
+                    QPoint(
+                        0,
+                        0,
+                    )
+                )
+
+            self.assertIn(
+                "Initialize Feature Structure...",
+                _RecordingMenu.latest_actions,
+            )
+            self.assertEqual(
+                emitted,
+                [
+                    "Manual Feature"
                 ],
             )
 

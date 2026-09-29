@@ -64,6 +64,66 @@ class DocumentListPanelTests(unittest.TestCase):
                 "nested.txt",
                 self._texts(panel),
             )
+            self.assertTrue(
+                panel.status_label.isHidden()
+            )
+
+    def test_empty_directory_shows_empty_state_and_allows_new_document(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+
+            self.assertEqual(
+                panel.list_widget.count(),
+                0,
+            )
+            self.assertFalse(
+                panel.status_label.isHidden()
+            )
+            self.assertEqual(
+                panel.status_label.text(),
+                "No Documents.",
+            )
+            self.assertTrue(
+                panel.new_document_button.isEnabled()
+            )
+
+    def test_empty_state_clears_when_document_is_added(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+
+            self.assertEqual(
+                panel.status_label.text(),
+                "No Documents.",
+            )
+
+            document = documents / "note.txt"
+            document.write_text(
+                "text",
+                encoding="utf-8",
+            )
+            panel.refresh()
+
+            self.assertTrue(
+                panel.status_label.isHidden()
+            )
+            self.assertEqual(
+                panel.status_label.text(),
+                "",
+            )
+            self.assertEqual(
+                self._texts(panel),
+                [
+                    "note.txt"
+                ],
+            )
 
     def test_file_activation_emits_real_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

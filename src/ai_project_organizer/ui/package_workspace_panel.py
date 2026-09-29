@@ -212,14 +212,14 @@ class PackageWorkspacePanel(QGroupBox):
             self
         )
 
-        label = QLabel(
+        self.no_selection_label = QLabel(
             (
                 "Select a Package to view its documents and "
                 "implementation package information."
             ),
             page,
         )
-        label.setWordWrap(
+        self.no_selection_label.setWordWrap(
             True
         )
 
@@ -227,7 +227,7 @@ class PackageWorkspacePanel(QGroupBox):
             page
         )
         layout.addWidget(
-            label
+            self.no_selection_label
         )
         layout.addStretch(
             1
@@ -452,6 +452,7 @@ class PackageWorkspacePanel(QGroupBox):
         self.refresh()
 
     def refresh(self) -> None:
+        self.status_label.clear()
         self.status_label.hide()
 
         workspace = self.workspace_path
@@ -492,7 +493,12 @@ class PackageWorkspacePanel(QGroupBox):
             self._show_status(
                 f"Unable to discover Packages: {error}"
             )
-            self._show_no_selection()
+            self._show_no_selection(
+                (
+                    "Package details are unavailable while "
+                    "Packages cannot be discovered."
+                )
+            )
             self._update_enabled_state()
             return
 
@@ -544,6 +550,27 @@ class PackageWorkspacePanel(QGroupBox):
 
             if package_id == selected_package_id:
                 selected_item = item
+
+        if not packages:
+            self.current_package_id = None
+            self.package_list.clearSelection()
+            self.package_list.blockSignals(
+                False
+            )
+            self._show_status(
+                (
+                    "No Packages. Add a Package to organize "
+                    "implementation work for this Feature."
+                )
+            )
+            self._show_no_selection(
+                (
+                    "Create a Package to begin organizing "
+                    "implementation work for this Feature."
+                )
+            )
+            self._update_enabled_state()
+            return
 
         if selected_item is not None:
             self.package_list.setCurrentItem(
@@ -628,16 +655,7 @@ class PackageWorkspacePanel(QGroupBox):
             )
             return
 
-        self.package_documents_panel.set_directory(
-            None
-        )
-        self._set_artifact_action_state(
-            can_import=False,
-            can_extract=False,
-            can_inspect=False,
-            can_install=False,
-            can_open_contents=False,
-        )
+        self._clear_selected_package_presentation()
         self.recovery_title_label.setText(
             package_id
         )
@@ -669,6 +687,7 @@ class PackageWorkspacePanel(QGroupBox):
             package_id: str,
             package_path: Path,
     ) -> None:
+        self._clear_selected_package_presentation()
         self.package_title_label.setText(
             package_id
         )
@@ -697,6 +716,9 @@ class PackageWorkspacePanel(QGroupBox):
             and contents_path.is_dir()
         )
 
+        self.archive_status_label.clear()
+        self.extracted_status_label.clear()
+        self.artifact_error_label.clear()
         self.artifact_error_label.hide()
         self.archive_status_label.show()
         self.extracted_status_label.show()
@@ -719,7 +741,9 @@ class PackageWorkspacePanel(QGroupBox):
                 )
             )
         except OSError as error:
+            self.archive_status_label.clear()
             self.archive_status_label.hide()
+            self.extracted_status_label.clear()
             self.extracted_status_label.hide()
             self.artifact_error_label.setText(
                 (
@@ -1139,18 +1163,41 @@ class PackageWorkspacePanel(QGroupBox):
 
         return None
 
-    def _show_no_selection(
+    def _clear_selected_package_presentation(
             self,
     ) -> None:
+        self.package_title_label.clear()
         self.package_documents_panel.set_directory(
             None
         )
+        self.archive_status_label.clear()
+        self.archive_status_label.hide()
+        self.extracted_status_label.clear()
+        self.extracted_status_label.hide()
+        self.artifact_error_label.clear()
+        self.artifact_error_label.hide()
+        self.recovery_title_label.clear()
+        self.recovery_status_label.clear()
+        self.initialize_package_button.hide()
         self._set_artifact_action_state(
             can_import=False,
             can_extract=False,
             can_inspect=False,
             can_install=False,
             can_open_contents=False,
+        )
+
+    def _show_no_selection(
+            self,
+            message: str | None = None,
+    ) -> None:
+        self._clear_selected_package_presentation()
+        self.no_selection_label.setText(
+            message
+            or (
+                "Select a Package to view its documents and "
+                "implementation package information."
+            )
         )
         self.details_stack.setCurrentWidget(
             self.no_selection_page

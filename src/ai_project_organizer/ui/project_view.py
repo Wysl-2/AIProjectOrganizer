@@ -1,11 +1,14 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -204,6 +207,12 @@ class ProjectView(QWidget):
         )
         self.feature_list.package_drop_requested.connect(
             self._feature_package_drop_requested
+        )
+        self.feature_list.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.feature_list.customContextMenuRequested.connect(
+            self._show_feature_context_menu
         )
 
         self.add_feature_button = QPushButton(
@@ -434,9 +443,13 @@ class ProjectView(QWidget):
             self.refresh()
 
     def refresh(self) -> None:
+        self.status_label.clear()
         self.status_label.hide()
         self.initialize_project_button.hide()
+        self.features_status_label.clear()
         self.features_status_label.hide()
+        self.feature_status_label.clear()
+        self.feature_status_label.hide()
 
         workspace = self.workspace_path
 
@@ -486,8 +499,9 @@ class ProjectView(QWidget):
             )
             self._show_project_status(
                 (
-                    "This workspace does not contain the standard "
-                    "Project structure."
+                    "Project structure incomplete.\n\n"
+                    "The standard Documents and Features folders "
+                    "are not available."
                 )
             )
             self.initialize_project_button.show()
@@ -573,7 +587,17 @@ class ProjectView(QWidget):
             features: tuple[Path, ...],
     ) -> None:
         self.feature_list.clear()
+        self.features_status_label.clear()
         self.features_status_label.hide()
+
+        if not features:
+            self._show_features_status(
+                (
+                    "No Features. Add a Feature to organize "
+                    "implementation work."
+                )
+            )
+            return
 
         for feature in features:
             feature_name = feature.name
@@ -624,6 +648,7 @@ class ProjectView(QWidget):
         self.feature_title_label.setText(
             feature_name
         )
+        self.feature_status_label.clear()
         self.feature_status_label.hide()
         self.initialize_feature_button.hide()
 
@@ -642,8 +667,8 @@ class ProjectView(QWidget):
             self.feature_splitter.hide()
             self._show_feature_status(
                 (
-                    "Feature structure error: "
-                    f"{error_text}"
+                    "Feature structure error:"
+                    f"\n\n{error_text}"
                 )
             )
             return
@@ -659,8 +684,9 @@ class ProjectView(QWidget):
             self.feature_splitter.hide()
             self._show_feature_status(
                 (
-                    "This Feature is missing its standard "
-                    "workspace structure."
+                    "Feature structure incomplete.\n\n"
+                    "The standard Documents and Packages folders "
+                    "are not available."
                 )
             )
             self.initialize_feature_button.show()
@@ -738,6 +764,93 @@ class ProjectView(QWidget):
             feature_name,
             "",
         )
+
+    def _show_feature_context_menu(
+            self,
+            position: QPoint,
+    ) -> None:
+        item = self.feature_list.itemAt(
+            position
+        )
+
+        if item is None:
+            return
+
+        feature_name = item.data(
+            _FEATURE_NAME_ROLE
+        )
+        path_text = item.data(
+            _ITEM_PATH_ROLE
+        )
+        state = item.data(
+            _STRUCTURE_STATE_ROLE
+        )
+
+        if (
+                not feature_name
+                or not path_text
+        ):
+            return
+
+        feature_name = str(
+            feature_name
+        )
+        feature_path = Path(
+            str(
+                path_text
+            )
+        )
+
+        self.feature_list.setCurrentItem(
+            item
+        )
+
+        menu = QMenu(
+            self
+        )
+        initialize_feature_action = None
+
+        if state == _STATE_INCOMPLETE:
+            initialize_feature_action = menu.addAction(
+                "Initialize Feature Structure..."
+            )
+
+        if menu.actions():
+            menu.addSeparator()
+
+        copy_path_action = menu.addAction(
+            "Copy Path"
+        )
+        open_location_action = menu.addAction(
+            "Open in File Manager"
+        )
+
+        selected = menu.exec(
+            self.feature_list.viewport().mapToGlobal(
+                position
+            )
+        )
+
+        if selected is initialize_feature_action:
+            self.initialize_feature_requested.emit(
+                feature_name
+            )
+
+        elif selected is copy_path_action:
+            QApplication.clipboard().setText(
+                str(
+                    feature_path
+                )
+            )
+
+        elif selected is open_location_action:
+            QDesktopServices.openUrl(
+                QUrl.fromLocalFile(
+                    str(
+                        feature_path
+                    )
+                )
+            )
 
     def _feature_structure_state(
             self,

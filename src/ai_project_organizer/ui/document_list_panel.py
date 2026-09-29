@@ -65,6 +65,7 @@ class DocumentListPanel(QGroupBox):
 
     def refresh(self) -> None:
         self.list_widget.clear()
+        self.status_label.clear()
         self.status_label.hide()
 
         directory = self.directory_path
@@ -105,6 +106,13 @@ class DocumentListPanel(QGroupBox):
                 entry.name,
             )
         )
+
+        if not entries:
+            self._show_status(
+                "No Documents."
+            )
+            self._update_enabled_state()
+            return
 
         for entry in entries:
             real_directory = (
