@@ -10,6 +10,13 @@ from PySide6.QtWidgets import (
     QTreeView,
 )
 
+from ai_project_organizer.workspace_paths import (
+    filesystem_entry_exists,
+    is_workspace_entry,
+    is_workspace_target,
+    same_path_entry,
+)
+
 
 class FileTreeView(QTreeView):
     new_file_requested = Signal(str)
@@ -52,15 +59,7 @@ class FileTreeView(QTreeView):
         )
 
     def _show_context_menu(self, position: QPoint) -> None:
-        target_directory = self._directory_at_position(
-            position
-        )
-
-        if target_directory is None:
-            return
-
         index = self.indexAt(position)
-
         selected_path: Path | None = None
 
         if index.isValid():
@@ -75,25 +74,42 @@ class FileTreeView(QTreeView):
         else:
             self.clearSelection()
 
+        target_directory = self._directory_at_position(
+            position
+        )
+
+        can_modify_entry = (
+            selected_path is not None
+            and self._can_modify_entry(
+                selected_path
+            )
+            and not self._is_workspace_root(
+                selected_path
+            )
+        )
+
+        if target_directory is None and not can_modify_entry:
+            return
+
         menu = QMenu(self)
 
-        new_file_action = menu.addAction(
-            "New File..."
-        )
-        new_folder_action = menu.addAction(
-            "New Folder..."
-        )
+        new_file_action = None
+        new_folder_action = None
+
+        if target_directory is not None:
+            new_file_action = menu.addAction(
+                "New File..."
+            )
+            new_folder_action = menu.addAction(
+                "New Folder..."
+            )
 
         rename_action = None
         delete_action = None
 
-        if (
-                selected_path is not None
-                and not self._is_workspace_root(
-            selected_path
-        )
-        ):
-            menu.addSeparator()
+        if can_modify_entry:
+            if target_directory is not None:
+                menu.addSeparator()
 
             rename_action = menu.addAction(
                 "Rename..."
@@ -106,12 +122,20 @@ class FileTreeView(QTreeView):
             self.viewport().mapToGlobal(position)
         )
 
-        if selected_action == new_file_action:
+        if (
+                new_file_action is not None
+                and selected_action == new_file_action
+                and target_directory is not None
+        ):
             self.new_file_requested.emit(
                 str(target_directory)
             )
 
-        elif selected_action == new_folder_action:
+        elif (
+                new_folder_action is not None
+                and selected_action == new_folder_action
+                and target_directory is not None
+        ):
             self.new_folder_requested.emit(
                 str(target_directory)
             )
@@ -144,19 +168,48 @@ class FileTreeView(QTreeView):
         index = self.indexAt(position)
 
         if not index.isValid():
-            return self.workspace_path
+            candidate = self.workspace_path
+        else:
+            model = self.model()
 
-        model = self.model()
+            if not isinstance(model, QFileSystemModel):
+                return None
 
-        if not isinstance(model, QFileSystemModel):
+            path = Path(
+                model.filePath(index)
+            )
+
+            if path.is_dir():
+                candidate = path
+            else:
+                candidate = path.parent
+
+        if (
+                not filesystem_entry_exists(candidate)
+                or not candidate.is_dir()
+                or not is_workspace_target(
+                    candidate,
+                    self.workspace_path,
+                )
+        ):
             return None
 
-        path = Path(model.filePath(index))
+        return candidate
 
-        if path.is_dir():
-            return path
+    def _can_modify_entry(
+            self,
+            path: Path,
+    ) -> bool:
+        if self.workspace_path is None:
+            return False
 
-        return path.parent
+        return (
+            filesystem_entry_exists(path)
+            and is_workspace_entry(
+                path,
+                self.workspace_path,
+            )
+        )
 
     def _is_workspace_root(
             self,
@@ -165,13 +218,10 @@ class FileTreeView(QTreeView):
         if self.workspace_path is None:
             return False
 
-        try:
-            return (
-                    path.resolve()
-                    == self.workspace_path.resolve()
-            )
-        except OSError:
-            return False
+        return same_path_entry(
+            path,
+            self.workspace_path,
+        )
 
     def dragEnterEvent(
             self,
@@ -259,7 +309,10 @@ class FileTreeView(QTreeView):
                         target_directory / source.name
                 )
 
-                if destination == source:
+                if same_path_entry(
+                        destination,
+                        source,
+                ):
                     continue
 
                 shutil.move(
@@ -305,26 +358,16 @@ class FileTreeView(QTreeView):
                 url.toLocalFile()
             )
 
-            if self._is_inside_workspace(path):
+            if (
+                    filesystem_entry_exists(path)
+                    and is_workspace_entry(
+                        path,
+                        self.workspace_path,
+                    )
+            ):
                 paths.append(path)
 
         return paths
-
-    def _is_inside_workspace(
-            self,
-            path: Path,
-    ) -> bool:
-        if self.workspace_path is None:
-            return False
-
-        try:
-            path.resolve().relative_to(
-                self.workspace_path.resolve()
-            )
-        except (ValueError, OSError):
-            return False
-
-        return True
 
     def _can_move_to(
             self,
@@ -347,13 +390,19 @@ class FileTreeView(QTreeView):
         if self.workspace_path is None:
             return "No workspace is open."
 
-        if not target_directory.is_dir():
+        if (
+                not filesystem_entry_exists(
+                    target_directory
+                )
+                or not target_directory.is_dir()
+        ):
             return (
                 "The destination is not a folder."
             )
 
-        if not self._is_inside_workspace(
-                target_directory
+        if not is_workspace_target(
+                target_directory,
+                self.workspace_path,
         ):
             return (
                 "Files cannot be moved outside "
@@ -361,30 +410,47 @@ class FileTreeView(QTreeView):
             )
 
         for source in sources:
-            if not source.exists():
+            if not filesystem_entry_exists(source):
                 return (
                     f"'{source.name}' no longer exists."
+                )
+
+            if not is_workspace_entry(
+                    source,
+                    self.workspace_path,
+            ):
+                return (
+                    "Files cannot be moved from outside "
+                    "the current workspace."
                 )
 
             destination = (
                     target_directory / source.name
             )
 
-            if destination == source:
+            if same_path_entry(
+                    destination,
+                    source,
+            ):
                 continue
 
-            if destination.exists():
+            if filesystem_entry_exists(
+                    destination
+            ):
                 return (
                     f"'{destination.name}' already exists "
                     "in the destination folder."
                 )
 
-            if source.is_dir():
+            if (
+                    source.is_dir()
+                    and not source.is_symlink()
+            ):
                 try:
                     target_directory.resolve().relative_to(
                         source.resolve()
                     )
-                except ValueError:
+                except (ValueError, OSError, RuntimeError):
                     pass
                 else:
                     return (

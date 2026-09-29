@@ -39,6 +39,12 @@ from ai_project_organizer.ui.welcome_page import (
     ProjectBrowserEntry,
     WelcomePage,
 )
+from ai_project_organizer.workspace_paths import (
+    filesystem_entry_exists,
+    is_workspace_entry,
+    is_workspace_target,
+    same_path_entry,
+)
 
 
 class MainWindow(QMainWindow):
@@ -847,6 +853,26 @@ class MainWindow(QMainWindow):
         if metadata_path is None:
             return False
 
+        if (
+                metadata_path.is_symlink()
+                or self.workspace_path is None
+                or not is_workspace_target(
+                    metadata_path,
+                    self.workspace_path,
+                )
+        ):
+            QMessageBox.warning(
+                self,
+                error_title,
+                (
+                    f"{error_message}\n\n"
+                    "The Project metadata file cannot be read "
+                    "through a symbolic link or outside the "
+                    "current workspace."
+                ),
+            )
+            return False
+
         try:
             text = metadata_path.read_text(
                 encoding="utf-8"
@@ -876,18 +902,37 @@ class MainWindow(QMainWindow):
         if self.file_model.isDir(index):
             return
 
-        file_path = self.file_model.filePath(
-            index
+        file_path = Path(
+            self.file_model.filePath(
+                index
+            )
         )
 
-        if file_path == self.current_file_path:
+        if self.workspace_path is None:
+            return
+
+        if not is_workspace_target(
+                file_path,
+                self.workspace_path,
+        ):
+            QMessageBox.warning(
+                self,
+                "Unable to Open File",
+                (
+                    "Files outside the current workspace "
+                    "cannot be opened through the workspace."
+                ),
+            )
+            return
+
+        if str(file_path) == self.current_file_path:
             return
 
         if not self._confirm_discard_unsaved_changes():
             return
 
         try:
-            text = Path(file_path).read_text(
+            text = file_path.read_text(
                 encoding="utf-8"
             )
         except UnicodeDecodeError:
@@ -911,7 +956,9 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self.current_file_path = file_path
+        self.current_file_path = str(
+            file_path
+        )
 
         self.text_editor.setPlainText(
             text
@@ -925,6 +972,23 @@ class MainWindow(QMainWindow):
 
     def _save_current_file(self) -> bool:
         if self.current_file_path is None:
+            return False
+
+        if (
+                self.workspace_path is None
+                or not is_workspace_target(
+                    self.current_file_path,
+                    self.workspace_path,
+                )
+        ):
+            QMessageBox.warning(
+                self,
+                "Unable to Save File",
+                (
+                    "The file no longer resolves inside the "
+                    "current workspace and cannot be saved."
+                ),
+            )
             return False
 
         try:
@@ -958,8 +1022,8 @@ class MainWindow(QMainWindow):
             target_path: str | None = None,
     ) -> None:
         if target_path is not None:
-            target_directory = Path(
-                target_path
+            target_directory = self._validated_creation_directory(
+                Path(target_path)
             )
         else:
             target_directory = (
@@ -997,13 +1061,32 @@ class MainWindow(QMainWindow):
                 target_directory / file_name
         )
 
-        if new_file_path.exists():
+        if filesystem_entry_exists(
+                new_file_path
+        ):
             QMessageBox.warning(
                 self,
                 "File Already Exists",
                 (
                     "A file or folder named "
                     f"'{file_name}' already exists."
+                ),
+            )
+            return
+
+        if (
+                self.workspace_path is None
+                or not is_workspace_target(
+                    new_file_path,
+                    self.workspace_path,
+                )
+        ):
+            QMessageBox.warning(
+                self,
+                "Invalid File Location",
+                (
+                    "Files can only be created inside "
+                    "the current workspace."
                 ),
             )
             return
@@ -1045,8 +1128,8 @@ class MainWindow(QMainWindow):
             target_path: str | None = None,
     ) -> None:
         if target_path is not None:
-            target_directory = Path(
-                target_path
+            target_directory = self._validated_creation_directory(
+                Path(target_path)
             )
         else:
             target_directory = (
@@ -1084,13 +1167,32 @@ class MainWindow(QMainWindow):
                 target_directory / folder_name
         )
 
-        if new_folder_path.exists():
+        if filesystem_entry_exists(
+                new_folder_path
+        ):
             QMessageBox.warning(
                 self,
                 "Folder Already Exists",
                 (
                     "A file or folder named "
                     f"'{folder_name}' already exists."
+                ),
+            )
+            return
+
+        if (
+                self.workspace_path is None
+                or not is_workspace_target(
+                    new_folder_path,
+                    self.workspace_path,
+                )
+        ):
+            QMessageBox.warning(
+                self,
+                "Invalid Folder Location",
+                (
+                    "Folders can only be created inside "
+                    "the current workspace."
                 ),
             )
             return
@@ -1149,13 +1251,32 @@ class MainWindow(QMainWindow):
         if new_path == path:
             return
 
-        if new_path.exists():
+        if filesystem_entry_exists(
+                new_path
+        ):
             QMessageBox.warning(
                 self,
                 "Name Already Exists",
                 (
                     "A file or folder named "
                     f"'{new_name}' already exists."
+                ),
+            )
+            return
+
+        if (
+                self.workspace_path is None
+                or not is_workspace_entry(
+                    new_path,
+                    self.workspace_path,
+                )
+        ):
+            QMessageBox.warning(
+                self,
+                "Invalid Operation",
+                (
+                    "Files outside the current "
+                    "workspace cannot be modified."
                 ),
             )
             return
@@ -1189,11 +1310,12 @@ class MainWindow(QMainWindow):
         if not self._can_modify_path(path):
             return
 
-        item_type = (
-            "folder"
-            if path.is_dir()
-            else "file"
-        )
+        if path.is_symlink():
+            item_type = "symbolic link"
+        elif path.is_dir():
+            item_type = "folder"
+        else:
+            item_type = "file"
 
         message_box = QMessageBox(self)
 
@@ -1208,7 +1330,14 @@ class MainWindow(QMainWindow):
             f"Delete {item_type} '{path.name}'?"
         )
 
-        if path.is_dir():
+        if path.is_symlink():
+            message_box.setInformativeText(
+                (
+                    "The symbolic link will be permanently deleted. "
+                    "Its target will not be deleted."
+                )
+            )
+        elif path.is_dir():
             message_box.setInformativeText(
                 (
                     "The folder and everything "
@@ -1299,20 +1428,58 @@ class MainWindow(QMainWindow):
         )
 
         if not current_index.isValid():
-            return Path(
+            candidate = Path(
                 self.workspace_path
             )
-
-        selected_path = Path(
-            self.file_model.filePath(
-                current_index
+        else:
+            selected_path = Path(
+                self.file_model.filePath(
+                    current_index
+                )
             )
+
+            if selected_path.is_dir():
+                candidate = selected_path
+            else:
+                candidate = selected_path.parent
+
+        return self._validated_creation_directory(
+            candidate
         )
 
-        if selected_path.is_dir():
-            return selected_path
+    def _validated_creation_directory(
+            self,
+            path: Path,
+    ) -> Path | None:
+        if self.workspace_path is None:
+            return None
 
-        return selected_path.parent
+        if (
+                not filesystem_entry_exists(path)
+                or not path.is_dir()
+        ):
+            QMessageBox.warning(
+                self,
+                "Invalid Folder Location",
+                "The selected location is not an available folder.",
+            )
+            return None
+
+        if not is_workspace_target(
+                path,
+                self.workspace_path,
+        ):
+            QMessageBox.warning(
+                self,
+                "Invalid Folder Location",
+                (
+                    "Files and folders can only be created inside "
+                    "the current workspace."
+                ),
+            )
+            return None
+
+        return path
 
     def _is_valid_item_name(
             self,
@@ -1336,7 +1503,7 @@ class MainWindow(QMainWindow):
         if self.workspace_path is None:
             return False
 
-        if not path.exists():
+        if not filesystem_entry_exists(path):
             QMessageBox.warning(
                 self,
                 "Item Not Found",
@@ -1347,16 +1514,10 @@ class MainWindow(QMainWindow):
             )
             return False
 
-        try:
-            resolved_path = path.resolve()
-            workspace = Path(
-                self.workspace_path
-            ).resolve()
-
-            resolved_path.relative_to(
-                workspace
-            )
-        except (ValueError, OSError):
+        if not is_workspace_entry(
+                path,
+                self.workspace_path,
+        ):
             QMessageBox.warning(
                 self,
                 "Invalid Operation",
@@ -1367,7 +1528,10 @@ class MainWindow(QMainWindow):
             )
             return False
 
-        if resolved_path == workspace:
+        if same_path_entry(
+                path,
+                self.workspace_path,
+        ):
             QMessageBox.warning(
                 self,
                 "Invalid Operation",
