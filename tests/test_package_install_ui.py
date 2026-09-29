@@ -65,7 +65,10 @@ class _InstallSelectingMenu:
             _position,
     ) -> _FakeAction | None:
         for action in self._actions:
-            if action.text == "Install Implementation Package...":
+            if (
+                    action.text
+                    == "Install Implementation Package..."
+            ):
                 return action
 
         return None
@@ -76,9 +79,13 @@ class PackageInstallUiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.application = QApplication.instance() or QApplication([])
 
-    def test_project_view_install_action_emits_package_context(self) -> None:
+    def test_project_view_install_action_emits_package_context(
+            self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
+            root = Path(
+                temporary_directory
+            )
             workspace = root / "workspace"
             workspace.mkdir()
             initialize_project_workspace_structure(
@@ -98,14 +105,12 @@ class PackageInstallUiTests(unittest.TestCase):
             view.set_workspace(
                 workspace
             )
+            view._open_feature(
+                "Feature"
+            )
 
-            package_item = (
-                view.tree
-                .topLevelItem(0)
-                .child(1)
-                .child(0)
-                .child(1)
-                .child(0)
+            package_item = view.package_list.item(
+                0
             )
             emitted: list[
                 tuple[str, str]
@@ -125,12 +130,12 @@ class PackageInstallUiTests(unittest.TestCase):
                     _InstallSelectingMenu,
                 ),
                 patch.object(
-                    view.tree,
+                    view.package_list,
                     "itemAt",
                     return_value=package_item,
                 ),
             ):
-                view._show_context_menu(
+                view._show_package_context_menu(
                     QPoint(
                         0,
                         0,
@@ -147,9 +152,13 @@ class PackageInstallUiTests(unittest.TestCase):
                 ],
             )
 
-    def test_inspector_install_request_emits_root_name_and_closes(self) -> None:
+    def test_inspector_install_request_emits_root_name_and_closes(
+            self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
+            root = Path(
+                temporary_directory
+            )
             package_root = root / "PackageRoot"
             package_root.mkdir()
             install_script = package_root / "Install.py"

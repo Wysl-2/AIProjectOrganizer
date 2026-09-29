@@ -1,0 +1,173 @@
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+os.environ.setdefault(
+    "QT_QPA_PLATFORM",
+    "offscreen",
+)
+
+from PySide6.QtWidgets import QApplication
+
+from ai_project_organizer.ui.document_list_panel import (
+    DocumentListPanel,
+)
+
+
+class DocumentListPanelTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.application = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _texts(
+            panel: DocumentListPanel,
+    ) -> list[str]:
+        return [
+            panel.list_widget.item(index).text()
+            for index in range(
+                panel.list_widget.count()
+            )
+        ]
+
+    def test_directory_is_listed_without_recursive_expansion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+            folder = documents / "Folder"
+            folder.mkdir()
+            (folder / "nested.txt").write_text(
+                "nested",
+                encoding="utf-8",
+            )
+            (documents / "B.txt").write_text(
+                "b",
+                encoding="utf-8",
+            )
+            (documents / "A.txt").write_text(
+                "a",
+                encoding="utf-8",
+            )
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+
+            self.assertEqual(
+                self._texts(panel),
+                [
+                    "Folder",
+                    "A.txt",
+                    "B.txt",
+                ],
+            )
+            self.assertNotIn(
+                "nested.txt",
+                self._texts(panel),
+            )
+
+    def test_file_activation_emits_real_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+            file_path = documents / "note.txt"
+            file_path.write_text(
+                "text",
+                encoding="utf-8",
+            )
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+
+            emitted: list[str] = []
+            panel.file_open_requested.connect(
+                emitted.append
+            )
+
+            panel._activate_item(
+                panel.list_widget.item(0)
+            )
+
+            self.assertEqual(
+                emitted,
+                [
+                    str(file_path)
+                ],
+            )
+
+    def test_directory_activation_does_not_emit_file_open(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+            (documents / "Folder").mkdir()
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+
+            emitted: list[str] = []
+            panel.file_open_requested.connect(
+                emitted.append
+            )
+
+            panel._activate_item(
+                panel.list_widget.item(0)
+            )
+
+            self.assertEqual(
+                emitted,
+                [],
+            )
+
+    def test_new_document_emits_documents_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+
+            emitted: list[str] = []
+            panel.new_document_requested.connect(
+                emitted.append
+            )
+
+            panel._request_new_document()
+
+            self.assertEqual(
+                emitted,
+                [
+                    str(documents)
+                ],
+            )
+
+    def test_unavailable_directory_clears_stale_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            documents = root / "Documents"
+            documents.mkdir()
+            (documents / "note.txt").write_text(
+                "text",
+                encoding="utf-8",
+            )
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+            self.assertEqual(
+                panel.list_widget.count(),
+                1,
+            )
+
+            missing = root / "Missing"
+            panel.set_directory(missing)
+
+            self.assertEqual(
+                panel.list_widget.count(),
+                0,
+            )
+            self.assertFalse(
+                panel.new_document_button.isEnabled()
+            )
+            self.assertIn(
+                "unavailable",
+                panel.status_label.text().lower(),
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

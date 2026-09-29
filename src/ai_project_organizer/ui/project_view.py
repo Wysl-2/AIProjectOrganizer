@@ -7,69 +7,97 @@ from PySide6.QtGui import (
     QDragLeaveEvent,
     QDragMoveEvent,
     QDropEvent,
-    QPainter,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMenu,
     QPushButton,
-    QStyle,
-    QStyleOptionViewItem,
-    QTreeWidget,
-    QTreeWidgetItem,
+    QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from ai_project_organizer.ui.document_list_panel import (
+    DocumentListPanel,
+)
 from ai_project_organizer.workspace_structure import (
     discover_feature_packages,
     discover_project_features,
     feature_documents_path,
-    feature_packages_path,
     is_project_feature_structure_initialized,
     is_project_package_structure_initialized,
     is_project_workspace_structure_initialized,
-    package_contents_path,
     package_documents_path,
     project_documents_path,
-    project_features_path,
 )
 
 
-PATH_ROLE = int(Qt.ItemDataRole.UserRole)
-KIND_ROLE = PATH_ROLE + 1
-FEATURE_ROLE = PATH_ROLE + 2
-PACKAGE_ROLE = PATH_ROLE + 3
+_ITEM_PATH_ROLE = int(Qt.ItemDataRole.UserRole)
+_FEATURE_NAME_ROLE = _ITEM_PATH_ROLE + 1
+_PACKAGE_ID_ROLE = _ITEM_PATH_ROLE + 2
+_STRUCTURE_STATE_ROLE = _ITEM_PATH_ROLE + 3
+_STRUCTURE_ERROR_ROLE = _ITEM_PATH_ROLE + 4
 
-KIND_PROJECT = "project"
-KIND_FEATURES = "features"
-KIND_FEATURE = "feature"
-KIND_PACKAGES = "packages"
-KIND_PACKAGE = "package"
-KIND_DOCUMENTS = "documents"
-KIND_CONTENTS = "contents"
-KIND_DIRECTORY = "directory"
-KIND_FILE = "file"
-KIND_STATUS = "status"
+_STATE_COMPLETE = "complete"
+_STATE_INCOMPLETE = "incomplete"
+_STATE_ERROR = "error"
 
 
-class _ProjectTreeWidget(QTreeWidget):
-    implementation_package_drop_requested = Signal(
-        str,
+def _local_zip_candidate(
+        mime_data,
+) -> Path | None:
+    urls = mime_data.urls()
+
+    if len(urls) != 1:
+        return None
+
+    url = urls[0]
+
+    if not url.isLocalFile():
+        return None
+
+    local_path = url.toLocalFile()
+
+    if not local_path:
+        return None
+
+    path = Path(local_path)
+
+    if (
+            path.is_symlink()
+            or not path.exists()
+            or not path.is_file()
+            or path.suffix.casefold() != ".zip"
+    ):
+        return None
+
+    return path
+
+
+class _ImplementationPackageDropListWidget(QListWidget):
+    package_drop_requested = Signal(
         str,
         str,
     )
 
     def __init__(
             self,
+            *,
+            target_role: int,
+            allow_background: bool,
             parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
 
-        self._drop_highlight_item: QTreeWidgetItem | None = None
+        self._target_role = target_role
+        self._allow_background = allow_background
 
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
@@ -80,112 +108,33 @@ class _ProjectTreeWidget(QTreeWidget):
             Qt.DropAction.CopyAction
         )
 
-    @staticmethod
-    def _local_zip_candidate(
-            mime_data,
-    ) -> Path | None:
-        urls = mime_data.urls()
+    def _drop_target_at(
+            self,
+            position: QPoint,
+    ) -> str | None:
+        item = self.itemAt(position)
 
-        if len(urls) != 1:
-            return None
-
-        url = urls[0]
-
-        if not url.isLocalFile():
-            return None
-
-        local_path = url.toLocalFile()
-
-        if not local_path:
-            return None
-
-        path = Path(
-            local_path
-        )
-
-        if (
-                path.is_symlink()
-                or not path.exists()
-                or not path.is_file()
-                or path.suffix.casefold() != ".zip"
-        ):
-            return None
-
-        return path
-
-    @staticmethod
-    def _drop_target_for_item(
-            item: QTreeWidgetItem | None,
-    ) -> tuple[str, str] | None:
         if item is None:
+            return (
+                ""
+                if self._allow_background
+                else None
+            )
+
+        value = item.data(
+            self._target_role
+        )
+
+        if not value:
             return None
 
-        kind = item.data(
-            0,
-            KIND_ROLE,
-        )
-        feature_name = item.data(
-            0,
-            FEATURE_ROLE,
-        )
-        package_id = item.data(
-            0,
-            PACKAGE_ROLE,
-        )
-
-        if (
-                kind in {
-                    KIND_FEATURE,
-                    KIND_PACKAGES,
-                }
-                and feature_name
-        ):
-            return (
-                feature_name,
-                "",
-            )
-
-        if (
-                kind in {
-                    KIND_PACKAGE,
-                    KIND_CONTENTS,
-                }
-                and feature_name
-                and package_id
-        ):
-            return (
-                feature_name,
-                package_id,
-            )
-
-        return None
-
-    def clear_drop_highlight(
-            self,
-    ) -> None:
-        if self._drop_highlight_item is None:
-            return
-
-        self._drop_highlight_item = None
-        self.viewport().update()
-
-    def _set_drop_highlight(
-            self,
-            item: QTreeWidgetItem | None,
-    ) -> None:
-        if item is self._drop_highlight_item:
-            return
-
-        self._drop_highlight_item = item
-        self.viewport().update()
+        return str(value)
 
     def dragEnterEvent(
             self,
             event: QDragEnterEvent,
     ) -> None:
-        self.clear_drop_highlight()
-
-        if self._local_zip_candidate(
+        if _local_zip_candidate(
                 event.mimeData()
         ) is None:
             event.ignore()
@@ -200,28 +149,20 @@ class _ProjectTreeWidget(QTreeWidget):
             self,
             event: QDragMoveEvent,
     ) -> None:
-        if self._local_zip_candidate(
+        if _local_zip_candidate(
                 event.mimeData()
         ) is None:
-            self.clear_drop_highlight()
             event.ignore()
             return
 
-        item = self.itemAt(
+        target = self._drop_target_at(
             event.position().toPoint()
-        )
-        target = self._drop_target_for_item(
-            item
         )
 
         if target is None:
-            self.clear_drop_highlight()
             event.ignore()
             return
 
-        self._set_drop_highlight(
-            item
-        )
         event.setDropAction(
             Qt.DropAction.CopyAction
         )
@@ -231,26 +172,18 @@ class _ProjectTreeWidget(QTreeWidget):
             self,
             event: QDragLeaveEvent,
     ) -> None:
-        self.clear_drop_highlight()
-        super().dragLeaveEvent(
-            event
-        )
+        super().dragLeaveEvent(event)
 
     def dropEvent(
             self,
             event: QDropEvent,
     ) -> None:
-        source = self._local_zip_candidate(
+        source = _local_zip_candidate(
             event.mimeData()
         )
-        item = self.itemAt(
+        target = self._drop_target_at(
             event.position().toPoint()
         )
-        target = self._drop_target_for_item(
-            item
-        )
-
-        self.clear_drop_highlight()
 
         if (
                 source is None
@@ -259,54 +192,14 @@ class _ProjectTreeWidget(QTreeWidget):
             event.ignore()
             return
 
-        feature_name, package_id = target
-
         event.setDropAction(
             Qt.DropAction.CopyAction
         )
         event.accept()
 
-        self.implementation_package_drop_requested.emit(
+        self.package_drop_requested.emit(
             str(source),
-            feature_name,
-            package_id,
-        )
-
-    def drawRow(
-            self,
-            painter: QPainter,
-            options: QStyleOptionViewItem,
-            index,
-    ) -> None:
-        item = self.itemFromIndex(
-            index
-        )
-
-        if (
-                self._drop_highlight_item is not None
-                and item is self._drop_highlight_item
-        ):
-            highlighted_options = QStyleOptionViewItem(
-                options
-            )
-            highlighted_options.state |= (
-                QStyle.StateFlag.State_Selected
-            )
-            highlighted_options.state &= ~(
-                QStyle.StateFlag.State_HasFocus
-            )
-
-            super().drawRow(
-                painter,
-                highlighted_options,
-                index,
-            )
-            return
-
-        super().drawRow(
-            painter,
-            options,
-            index,
+            target,
         )
 
 
@@ -317,7 +210,10 @@ class ProjectView(QWidget):
     add_package_requested = Signal(str)
     initialize_project_requested = Signal()
     initialize_feature_requested = Signal(str)
-    initialize_package_requested = Signal(str, str)
+    initialize_package_requested = Signal(
+        str,
+        str,
+    )
     implementation_package_import_requested = Signal(
         str,
         str,
@@ -344,41 +240,7 @@ class ProjectView(QWidget):
 
         self.workspace_path: Path | None = None
         self.project_display_name: str | None = None
-
-        self.add_feature_button = QPushButton(
-            "Add Feature",
-            self,
-        )
-        self.add_package_button = QPushButton(
-            "Add Package",
-            self,
-        )
-        self.refresh_button = QPushButton(
-            "Refresh",
-            self,
-        )
-
-        self.add_feature_button.clicked.connect(
-            lambda: self.add_feature_requested.emit()
-        )
-        self.add_package_button.clicked.connect(
-            lambda: self.add_package_requested.emit("")
-        )
-        self.refresh_button.clicked.connect(
-            lambda: self.refresh()
-        )
-
-        controls = QHBoxLayout()
-        controls.addWidget(
-            self.add_feature_button
-        )
-        controls.addWidget(
-            self.add_package_button
-        )
-        controls.addStretch(1)
-        controls.addWidget(
-            self.refresh_button
-        )
+        self.current_feature_name: str | None = None
 
         self.status_label = QLabel(self)
         self.status_label.setWordWrap(True)
@@ -393,33 +255,22 @@ class ProjectView(QWidget):
         )
         self.initialize_project_button.hide()
 
-        self.tree = _ProjectTreeWidget(
-            self
+        self.page_stack = QStackedWidget(self)
+
+        self.project_page = self._build_project_page()
+        self.feature_page = self._build_feature_page()
+
+        self.page_stack.addWidget(
+            self.project_page
         )
-        self.tree.setHeaderHidden(True)
-        self.tree.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu
+        self.page_stack.addWidget(
+            self.feature_page
         )
-        self.tree.customContextMenuRequested.connect(
-            self._show_context_menu
-        )
-        self.tree.itemDoubleClicked.connect(
-            self._activate_item
-        )
-        self.tree.implementation_package_drop_requested.connect(
-            lambda source_path, feature_name, package_id: (
-                self.implementation_package_import_requested.emit(
-                    source_path,
-                    feature_name,
-                    package_id,
-                )
-            )
+        self.page_stack.setCurrentWidget(
+            self.project_page
         )
 
         layout = QVBoxLayout(self)
-        layout.addLayout(
-            controls
-        )
         layout.addWidget(
             self.status_label
         )
@@ -427,24 +278,276 @@ class ProjectView(QWidget):
             self.initialize_project_button
         )
         layout.addWidget(
-            self.tree,
+            self.page_stack,
             1,
         )
 
         self._update_enabled_state()
+
+    def _build_project_page(
+            self,
+    ) -> QWidget:
+        page = QWidget(self)
+
+        self.project_title_label = QLabel(page)
+        self.project_refresh_button = QPushButton(
+            "Refresh",
+            page,
+        )
+        self.project_refresh_button.clicked.connect(
+            self.refresh
+        )
+
+        header = QHBoxLayout()
+        header.addWidget(
+            self.project_title_label
+        )
+        header.addStretch(1)
+        header.addWidget(
+            self.project_refresh_button
+        )
+
+        self.project_documents_panel = DocumentListPanel(
+            page
+        )
+        self.project_documents_panel.file_open_requested.connect(
+            self.file_open_requested.emit
+        )
+        self.project_documents_panel.new_document_requested.connect(
+            self.new_document_requested.emit
+        )
+
+        features_group = QGroupBox(
+            "Features",
+            page,
+        )
+        self.features_status_label = QLabel(
+            features_group
+        )
+        self.features_status_label.setWordWrap(True)
+        self.features_status_label.hide()
+
+        self.feature_list = _ImplementationPackageDropListWidget(
+            target_role=_FEATURE_NAME_ROLE,
+            allow_background=False,
+            parent=features_group,
+        )
+        self.feature_list.itemDoubleClicked.connect(
+            self._feature_item_activated
+        )
+        self.feature_list.package_drop_requested.connect(
+            self._feature_package_drop_requested
+        )
+
+        self.add_feature_button = QPushButton(
+            "Add Feature",
+            features_group,
+        )
+        self.add_feature_button.clicked.connect(
+            lambda: self.add_feature_requested.emit()
+        )
+
+        features_layout = QVBoxLayout(
+            features_group
+        )
+        features_layout.addWidget(
+            self.features_status_label
+        )
+        features_layout.addWidget(
+            self.feature_list,
+            1,
+        )
+        features_layout.addWidget(
+            self.add_feature_button
+        )
+
+        self.project_splitter = QSplitter(
+            Qt.Orientation.Vertical,
+            page,
+        )
+        self.project_splitter.setChildrenCollapsible(
+            False
+        )
+        self.project_splitter.addWidget(
+            self.project_documents_panel
+        )
+        self.project_splitter.addWidget(
+            features_group
+        )
+        self.project_splitter.setStretchFactor(
+            0,
+            1,
+        )
+        self.project_splitter.setStretchFactor(
+            1,
+            1,
+        )
+
+        layout = QVBoxLayout(page)
+        layout.addLayout(header)
+        layout.addWidget(
+            self.project_splitter,
+            1,
+        )
+
+        return page
+
+    def _build_feature_page(
+            self,
+    ) -> QWidget:
+        page = QWidget(self)
+
+        self.back_to_features_button = QPushButton(
+            "Back to Features",
+            page,
+        )
+        self.back_to_features_button.clicked.connect(
+            self._return_to_project_page
+        )
+
+        self.feature_title_label = QLabel(page)
+        self.feature_refresh_button = QPushButton(
+            "Refresh",
+            page,
+        )
+        self.feature_refresh_button.clicked.connect(
+            self.refresh
+        )
+
+        header = QHBoxLayout()
+        header.addWidget(
+            self.back_to_features_button
+        )
+        header.addWidget(
+            self.feature_title_label
+        )
+        header.addStretch(1)
+        header.addWidget(
+            self.feature_refresh_button
+        )
+
+        self.feature_status_label = QLabel(page)
+        self.feature_status_label.setWordWrap(True)
+        self.feature_status_label.hide()
+
+        self.initialize_feature_button = QPushButton(
+            "Initialize Feature Structure...",
+            page,
+        )
+        self.initialize_feature_button.clicked.connect(
+            self._request_feature_initialization
+        )
+        self.initialize_feature_button.hide()
+
+        self.feature_documents_panel = DocumentListPanel(
+            page
+        )
+        self.feature_documents_panel.file_open_requested.connect(
+            self.file_open_requested.emit
+        )
+        self.feature_documents_panel.new_document_requested.connect(
+            self.new_document_requested.emit
+        )
+
+        packages_group = QGroupBox(
+            "Packages",
+            page,
+        )
+        self.packages_status_label = QLabel(
+            packages_group
+        )
+        self.packages_status_label.setWordWrap(True)
+        self.packages_status_label.hide()
+
+        self.package_list = _ImplementationPackageDropListWidget(
+            target_role=_PACKAGE_ID_ROLE,
+            allow_background=True,
+            parent=packages_group,
+        )
+        self.package_list.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.package_list.customContextMenuRequested.connect(
+            self._show_package_context_menu
+        )
+        self.package_list.package_drop_requested.connect(
+            self._package_drop_requested
+        )
+
+        self.add_package_button = QPushButton(
+            "Add Package",
+            packages_group,
+        )
+        self.add_package_button.clicked.connect(
+            self._request_add_package
+        )
+
+        packages_layout = QVBoxLayout(
+            packages_group
+        )
+        packages_layout.addWidget(
+            self.packages_status_label
+        )
+        packages_layout.addWidget(
+            self.package_list,
+            1,
+        )
+        packages_layout.addWidget(
+            self.add_package_button
+        )
+
+        self.feature_splitter = QSplitter(
+            Qt.Orientation.Vertical,
+            page,
+        )
+        self.feature_splitter.setChildrenCollapsible(
+            False
+        )
+        self.feature_splitter.addWidget(
+            self.feature_documents_panel
+        )
+        self.feature_splitter.addWidget(
+            packages_group
+        )
+        self.feature_splitter.setStretchFactor(
+            0,
+            1,
+        )
+        self.feature_splitter.setStretchFactor(
+            1,
+            1,
+        )
+
+        layout = QVBoxLayout(page)
+        layout.addLayout(header)
+        layout.addWidget(
+            self.feature_status_label
+        )
+        layout.addWidget(
+            self.initialize_feature_button
+        )
+        layout.addWidget(
+            self.feature_splitter,
+            1,
+        )
+
+        return page
 
     def set_workspace(
             self,
             workspace_path: str | Path | None,
             display_name: str | None = None,
     ) -> None:
-        self.tree.clear_drop_highlight()
         self.workspace_path = (
             Path(workspace_path).expanduser()
             if workspace_path is not None
             else None
         )
         self.project_display_name = display_name
+        self.current_feature_name = None
+        self.page_stack.setCurrentWidget(
+            self.project_page
+        )
 
         self._update_enabled_state()
         self.refresh()
@@ -459,20 +562,30 @@ class ProjectView(QWidget):
             self.refresh()
 
     def refresh(self) -> None:
-        self.tree.clear_drop_highlight()
-        self.tree.clear()
         self.status_label.hide()
         self.initialize_project_button.hide()
-
-        if self.workspace_path is None:
-            return
+        self.features_status_label.hide()
 
         workspace = self.workspace_path
-        display_name = (
-            self.project_display_name
-            or workspace.name
-            or str(workspace)
-        )
+
+        if workspace is None:
+            self.current_feature_name = None
+            self.project_title_label.clear()
+            self.feature_title_label.clear()
+            self.project_documents_panel.set_directory(
+                None
+            )
+            self.feature_documents_panel.set_directory(
+                None
+            )
+            self.feature_list.clear()
+            self.package_list.clear()
+            self.page_stack.setCurrentWidget(
+                self.project_page
+            )
+            self.page_stack.hide()
+            self._update_enabled_state()
+            return
 
         try:
             initialized = (
@@ -481,54 +594,37 @@ class ProjectView(QWidget):
                 )
             )
         except OSError as error:
-            self._show_status(
+            self._show_project_status(
                 f"Project structure error: {error}"
             )
+            self._update_enabled_state()
             return
 
         if not initialized:
-            self._show_status(
-                "This workspace does not contain the standard "
-                "Project structure."
+            self._show_project_status(
+                (
+                    "This workspace does not contain the standard "
+                    "Project structure."
+                )
             )
             self.initialize_project_button.show()
+            self._update_enabled_state()
             return
 
-        root = self._item(
-            display_name,
-            workspace,
-            KIND_PROJECT,
-        )
-        self.tree.addTopLevelItem(
-            root
-        )
+        self.page_stack.show()
 
-        documents_path = project_documents_path(
-            workspace
+        display_name = (
+            self.project_display_name
+            or workspace.name
+            or str(workspace)
         )
-        documents_item = self._item(
-            "Documents",
-            documents_path,
-            KIND_DOCUMENTS,
+        self.project_title_label.setText(
+            display_name
         )
-        root.addChild(
-            documents_item
-        )
-        self._populate_directory(
-            documents_item,
-            documents_path,
-        )
-
-        features_path = project_features_path(
-            workspace
-        )
-        features_item = self._item(
-            "Features",
-            features_path,
-            KIND_FEATURES,
-        )
-        root.addChild(
-            features_item
+        self.project_documents_panel.set_directory(
+            project_documents_path(
+                workspace
+            )
         )
 
         try:
@@ -536,89 +632,153 @@ class ProjectView(QWidget):
                 workspace
             )
         except OSError as error:
-            features_item.addChild(
-                self._status_item(
-                    f"Structure error: {error}"
-                )
+            features = ()
+            self.feature_list.clear()
+            self._show_features_status(
+                f"Unable to discover Features: {error}"
             )
         else:
-            for feature in features:
-                self._populate_feature(
-                    features_item,
-                    feature,
-                )
+            self._populate_features(
+                features
+            )
 
-        root.setExpanded(True)
-        documents_item.setExpanded(True)
-        features_item.setExpanded(True)
+        current_feature = None
 
-    def _populate_feature(
+        if self.current_feature_name is not None:
+            current_feature = next(
+                (
+                    feature
+                    for feature in features
+                    if (
+                        feature.name
+                        == self.current_feature_name
+                    )
+                ),
+                None,
+            )
+
+        if current_feature is None:
+            self.current_feature_name = None
+            self.feature_documents_panel.set_directory(
+                None
+            )
+            self.package_list.clear()
+            self.page_stack.setCurrentWidget(
+                self.project_page
+            )
+        else:
+            self._refresh_feature_page(
+                current_feature
+            )
+            self.page_stack.setCurrentWidget(
+                self.feature_page
+            )
+
+        self._update_enabled_state()
+
+    def _populate_features(
             self,
-            parent: QTreeWidgetItem,
-            feature: Path,
+            features: tuple[Path, ...],
     ) -> None:
-        feature_name = feature.name
-        feature_item = self._item(
-            feature_name,
-            feature,
-            KIND_FEATURE,
-            feature_name=feature_name,
+        self.feature_list.clear()
+        self.features_status_label.hide()
+
+        for feature in features:
+            feature_name = feature.name
+            state, error_text = self._feature_structure_state(
+                feature_name
+            )
+            text = self._structured_item_text(
+                feature_name,
+                state,
+            )
+
+            item = QListWidgetItem(text)
+            item.setData(
+                _ITEM_PATH_ROLE,
+                str(feature),
+            )
+            item.setData(
+                _FEATURE_NAME_ROLE,
+                feature_name,
+            )
+            item.setData(
+                _STRUCTURE_STATE_ROLE,
+                state,
+            )
+
+            if error_text is not None:
+                item.setData(
+                    _STRUCTURE_ERROR_ROLE,
+                    error_text,
+                )
+                item.setToolTip(
+                    error_text
+                )
+
+            self.feature_list.addItem(
+                item
+            )
+
+    def _refresh_feature_page(
+            self,
+            feature_path: Path,
+    ) -> None:
+        feature_name = feature_path.name
+        self.feature_title_label.setText(
+            feature_name
         )
-        parent.addChild(
-            feature_item
+        self.feature_status_label.hide()
+        self.initialize_feature_button.hide()
+        self.packages_status_label.hide()
+
+        state, error_text = self._feature_structure_state(
+            feature_name
         )
 
-        try:
-            initialized = (
-                is_project_feature_structure_initialized(
-                    self.workspace_path,
-                    feature_name,
+        if state == _STATE_ERROR:
+            self.feature_documents_panel.set_directory(
+                None
+            )
+            self.package_list.clear()
+            self.feature_splitter.hide()
+            self._show_feature_status(
+                (
+                    "Feature structure error: "
+                    f"{error_text}"
                 )
             )
-        except OSError as error:
-            feature_item.addChild(
-                self._status_item(
-                    f"Structure error: {error}"
-                )
+            self.add_package_button.setEnabled(
+                False
             )
             return
 
-        if not initialized:
-            feature_item.addChild(
-                self._status_item(
-                    "Structure incomplete"
+        if state == _STATE_INCOMPLETE:
+            self.feature_documents_panel.set_directory(
+                None
+            )
+            self.package_list.clear()
+            self.feature_splitter.hide()
+            self._show_feature_status(
+                (
+                    "This Feature is missing its standard "
+                    "workspace structure."
                 )
+            )
+            self.initialize_feature_button.show()
+            self.add_package_button.setEnabled(
+                False
             )
             return
 
-        documents_path = feature_documents_path(
-            feature
+        self.feature_splitter.show()
+        self.add_package_button.setEnabled(
+            True
         )
-        documents_item = self._item(
-            "Documents",
-            documents_path,
-            KIND_DOCUMENTS,
-            feature_name=feature_name,
-        )
-        feature_item.addChild(
-            documents_item
-        )
-        self._populate_directory(
-            documents_item,
-            documents_path,
-        )
-
-        packages_path = feature_packages_path(
-            feature
-        )
-        packages_item = self._item(
-            "Packages",
-            packages_path,
-            KIND_PACKAGES,
-            feature_name=feature_name,
-        )
-        feature_item.addChild(
-            packages_item
+        self.feature_documents_panel.set_directory(
+            feature_documents_path(
+                feature_path
+            )
         )
 
         try:
@@ -627,326 +787,197 @@ class ProjectView(QWidget):
                 feature_name,
             )
         except OSError as error:
-            packages_item.addChild(
-                self._status_item(
-                    f"Structure error: {error}"
-                )
+            self.package_list.clear()
+            self._show_packages_status(
+                f"Unable to discover Packages: {error}"
             )
             return
+
+        self._populate_packages(
+            feature_name,
+            packages,
+        )
+
+    def _populate_packages(
+            self,
+            feature_name: str,
+            packages: tuple[Path, ...],
+    ) -> None:
+        self.package_list.clear()
+        self.packages_status_label.hide()
 
         for package in packages:
-            self._populate_package(
-                packages_item,
+            package_id = package.name
+            state, error_text = self._package_structure_state(
                 feature_name,
-                package,
-            )
-
-    def _populate_package(
-            self,
-            parent: QTreeWidgetItem,
-            feature_name: str,
-            package: Path,
-    ) -> None:
-        package_id = package.name
-        package_item = self._item(
-            package_id,
-            package,
-            KIND_PACKAGE,
-            feature_name=feature_name,
-            package_id=package_id,
-        )
-        parent.addChild(
-            package_item
-        )
-
-        try:
-            initialized = (
-                is_project_package_structure_initialized(
-                    self.workspace_path,
-                    feature_name,
-                    package_id,
-                )
-            )
-        except OSError as error:
-            package_item.addChild(
-                self._status_item(
-                    f"Structure error: {error}"
-                )
-            )
-            return
-
-        if not initialized:
-            package_item.addChild(
-                self._status_item(
-                    "Structure incomplete"
-                )
-            )
-            return
-
-        documents_path = package_documents_path(
-            package
-        )
-        documents_item = self._item(
-            "Documents",
-            documents_path,
-            KIND_DOCUMENTS,
-            feature_name=feature_name,
-            package_id=package_id,
-        )
-        package_item.addChild(
-            documents_item
-        )
-        self._populate_directory(
-            documents_item,
-            documents_path,
-        )
-
-        contents_path = package_contents_path(
-            package
-        )
-        contents_item = self._item(
-            "Contents",
-            contents_path,
-            KIND_CONTENTS,
-            feature_name=feature_name,
-            package_id=package_id,
-        )
-        package_item.addChild(
-            contents_item
-        )
-        self._populate_directory(
-            contents_item,
-            contents_path,
-        )
-
-    def _populate_directory(
-            self,
-            parent: QTreeWidgetItem,
-            directory: Path,
-    ) -> None:
-        try:
-            entries = list(
-                directory.iterdir()
-            )
-        except OSError as error:
-            parent.addChild(
-                self._status_item(
-                    f"Unable to read: {error}"
-                )
-            )
-            return
-
-        entries.sort(
-            key=lambda entry: (
-                0
-                if entry.is_dir() and not entry.is_symlink()
-                else 1,
-                entry.name.casefold(),
-                entry.name,
-            )
-        )
-
-        for entry in entries:
-            if (
-                    entry.is_dir()
-                    and not entry.is_symlink()
-            ):
-                item = self._item(
-                    entry.name,
-                    entry,
-                    KIND_DIRECTORY,
-                )
-                parent.addChild(
-                    item
-                )
-                self._populate_directory(
-                    item,
-                    entry,
-                )
-                continue
-
-            parent.addChild(
-                self._item(
-                    entry.name,
-                    entry,
-                    KIND_FILE,
-                )
-            )
-
-    def _item(
-            self,
-            text: str,
-            path: Path,
-            kind: str,
-            *,
-            feature_name: str | None = None,
-            package_id: str | None = None,
-    ) -> QTreeWidgetItem:
-        item = QTreeWidgetItem(
-            [text]
-        )
-        item.setData(
-            0,
-            PATH_ROLE,
-            str(path),
-        )
-        item.setData(
-            0,
-            KIND_ROLE,
-            kind,
-        )
-
-        if feature_name is not None:
-            item.setData(
-                0,
-                FEATURE_ROLE,
-                feature_name,
-            )
-
-        if package_id is not None:
-            item.setData(
-                0,
-                PACKAGE_ROLE,
                 package_id,
             )
-
-        return item
-
-    def _status_item(
-            self,
-            text: str,
-    ) -> QTreeWidgetItem:
-        item = QTreeWidgetItem(
-            [text]
-        )
-        item.setData(
-            0,
-            KIND_ROLE,
-            KIND_STATUS,
-        )
-        return item
-
-    def _activate_item(
-            self,
-            item: QTreeWidgetItem,
-            _column: int,
-    ) -> None:
-        if item.data(
-                0,
-                KIND_ROLE,
-        ) != KIND_FILE:
-            return
-
-        path = item.data(
-            0,
-            PATH_ROLE,
-        )
-
-        if path:
-            self.file_open_requested.emit(
-                path
+            text = self._structured_item_text(
+                package_id,
+                state,
             )
 
-    def _show_context_menu(
+            item = QListWidgetItem(text)
+            item.setData(
+                _ITEM_PATH_ROLE,
+                str(package),
+            )
+            item.setData(
+                _PACKAGE_ID_ROLE,
+                package_id,
+            )
+            item.setData(
+                _STRUCTURE_STATE_ROLE,
+                state,
+            )
+
+            if error_text is not None:
+                item.setData(
+                    _STRUCTURE_ERROR_ROLE,
+                    error_text,
+                )
+                item.setToolTip(
+                    error_text
+                )
+
+            self.package_list.addItem(
+                item
+            )
+
+    def _feature_item_activated(
+            self,
+            item: QListWidgetItem,
+    ) -> None:
+        feature_name = item.data(
+            _FEATURE_NAME_ROLE
+        )
+
+        if not feature_name:
+            return
+
+        self._open_feature(
+            str(feature_name)
+        )
+
+    def _open_feature(
+            self,
+            feature_name: str,
+    ) -> None:
+        if self.workspace_path is None:
+            return
+
+        self.current_feature_name = feature_name
+        self.refresh()
+
+    def _return_to_project_page(
+            self,
+    ) -> None:
+        self.current_feature_name = None
+        self.page_stack.setCurrentWidget(
+            self.project_page
+        )
+        self._update_enabled_state()
+
+    def _request_feature_initialization(
+            self,
+    ) -> None:
+        feature_name = self.current_feature_name
+
+        if not feature_name:
+            return
+
+        self.initialize_feature_requested.emit(
+            feature_name
+        )
+
+    def _request_add_package(
+            self,
+    ) -> None:
+        feature_name = self.current_feature_name
+
+        if not feature_name:
+            return
+
+        self.add_package_requested.emit(
+            feature_name
+        )
+
+    def _feature_package_drop_requested(
+            self,
+            source_path: str,
+            feature_name: str,
+    ) -> None:
+        if not feature_name:
+            return
+
+        self.implementation_package_import_requested.emit(
+            source_path,
+            feature_name,
+            "",
+        )
+
+    def _package_drop_requested(
+            self,
+            source_path: str,
+            package_id: str,
+    ) -> None:
+        feature_name = self.current_feature_name
+
+        if not feature_name:
+            return
+
+        self.implementation_package_import_requested.emit(
+            source_path,
+            feature_name,
+            package_id,
+        )
+
+    def _show_package_context_menu(
             self,
             position: QPoint,
     ) -> None:
-        item = self.tree.itemAt(
+        item = self.package_list.itemAt(
             position
         )
 
         if item is None:
             return
 
-        kind = item.data(
-            0,
-            KIND_ROLE,
+        feature_name = self.current_feature_name
+        package_id = item.data(
+            _PACKAGE_ID_ROLE
         )
         path_text = item.data(
-            0,
-            PATH_ROLE,
+            _ITEM_PATH_ROLE
         )
-        feature_name = item.data(
-            0,
-            FEATURE_ROLE,
+        state = item.data(
+            _STRUCTURE_STATE_ROLE
         )
-        package_id = item.data(
-            0,
-            PACKAGE_ROLE,
+
+        if (
+                not feature_name
+                or not package_id
+                or not path_text
+        ):
+            return
+
+        package_id = str(package_id)
+        package_path = Path(
+            str(path_text)
         )
 
         menu = QMenu(self)
-
         new_document_action = None
-        add_package_action = None
-        initialize_feature_action = None
         initialize_package_action = None
         extract_package_action = None
         inspect_package_action = None
         install_package_action = None
-        copy_path_action = None
-        open_location_action = None
 
-        if kind in {
-            KIND_PROJECT,
-            KIND_FEATURE,
-            KIND_PACKAGE,
-            KIND_DOCUMENTS,
-        }:
-            documents_path = self._documents_target_for_item(
-                item
+        if state == _STATE_COMPLETE:
+            new_document_action = menu.addAction(
+                "New Document..."
             )
-            if (
-                    documents_path is not None
-                    and documents_path.is_dir()
-            ):
-                new_document_action = menu.addAction(
-                    "New Document..."
-                )
-
-        if (
-                kind in {
-                    KIND_FEATURE,
-                    KIND_PACKAGES,
-                }
-                and feature_name
-        ):
-            add_package_action = menu.addAction(
-                "Add Package..."
-            )
-
-        if (
-                kind == KIND_FEATURE
-                and feature_name
-                and self._feature_needs_initialization(
-                    feature_name
-                )
-        ):
-            initialize_feature_action = menu.addAction(
-                "Initialize Feature Structure..."
-            )
-
-        if (
-                kind == KIND_PACKAGE
-                and feature_name
-                and package_id
-                and self._package_needs_initialization(
-                    feature_name,
-                    package_id,
-                )
-        ):
-            initialize_package_action = menu.addAction(
-                "Initialize Package Structure..."
-            )
-
-        package_context = self._package_artifact_context(
-            item
-        )
-
-        if package_context is not None:
-            if menu.actions():
-                menu.addSeparator()
-
+            menu.addSeparator()
             extract_package_action = menu.addAction(
                 "Extract Implementation Package..."
             )
@@ -957,110 +988,70 @@ class ProjectView(QWidget):
                 "Install Implementation Package..."
             )
 
-        if path_text:
-            if menu.actions():
-                menu.addSeparator()
-
-            copy_path_action = menu.addAction(
-                "Copy Path"
-            )
-            open_location_action = menu.addAction(
-                "Open in File Manager"
+        elif state == _STATE_INCOMPLETE:
+            initialize_package_action = menu.addAction(
+                "Initialize Package Structure..."
             )
 
-        if not menu.actions():
-            return
+        if menu.actions():
+            menu.addSeparator()
+
+        copy_path_action = menu.addAction(
+            "Copy Path"
+        )
+        open_location_action = menu.addAction(
+            "Open in File Manager"
+        )
 
         selected = menu.exec(
-            self.tree.viewport().mapToGlobal(
+            self.package_list.viewport().mapToGlobal(
                 position
             )
         )
 
         if selected is new_document_action:
-            documents_path = self._documents_target_for_item(
-                item
-            )
-            if documents_path is not None:
-                self.new_document_requested.emit(
-                    str(documents_path)
+            self.new_document_requested.emit(
+                str(
+                    package_documents_path(
+                        package_path
+                    )
                 )
-
-        elif (
-                selected is add_package_action
-                and feature_name
-        ):
-            self.add_package_requested.emit(
-                feature_name
             )
 
-        elif (
-                selected is initialize_feature_action
-                and feature_name
-        ):
-            self.initialize_feature_requested.emit(
-                feature_name
-            )
-
-        elif (
-                selected is initialize_package_action
-                and feature_name
-                and package_id
-        ):
+        elif selected is initialize_package_action:
             self.initialize_package_requested.emit(
                 feature_name,
                 package_id,
             )
 
-        elif (
-                selected is extract_package_action
-                and package_context is not None
-        ):
-            context_feature, context_package = package_context
+        elif selected is extract_package_action:
             self.extract_implementation_package_requested.emit(
-                context_feature,
-                context_package,
+                feature_name,
+                package_id,
             )
 
-        elif (
-                selected is inspect_package_action
-                and package_context is not None
-        ):
-            context_feature, context_package = package_context
+        elif selected is inspect_package_action:
             self.inspect_implementation_package_requested.emit(
-                context_feature,
-                context_package,
+                feature_name,
+                package_id,
             )
 
-        elif (
-                selected is install_package_action
-                and package_context is not None
-        ):
-            context_feature, context_package = package_context
+        elif selected is install_package_action:
             self.install_implementation_package_requested.emit(
-                context_feature,
-                context_package,
+                feature_name,
+                package_id,
             )
 
-        elif (
-                selected is copy_path_action
-                and path_text
-        ):
+        elif selected is copy_path_action:
             QApplication.clipboard().setText(
-                path_text
+                str(package_path)
             )
 
-        elif (
-                selected is open_location_action
-                and path_text
-        ):
-            path = Path(
-                path_text
-            )
+        elif selected is open_location_action:
             target = (
-                path
-                if path.is_dir()
-                else path.parent
+                package_path
+                if package_path.is_dir()
+                else package_path.parent
             )
             QDesktopServices.openUrl(
                 QUrl.fromLocalFile(
@@ -1068,134 +1059,139 @@ class ProjectView(QWidget):
                 )
             )
 
-    def _package_artifact_context(
-            self,
-            item: QTreeWidgetItem,
-    ) -> tuple[str, str] | None:
-        kind = item.data(
-            0,
-            KIND_ROLE,
-        )
-        feature_name = item.data(
-            0,
-            FEATURE_ROLE,
-        )
-        package_id = item.data(
-            0,
-            PACKAGE_ROLE,
-        )
-
-        if (
-                kind not in {
-                    KIND_PACKAGE,
-                    KIND_CONTENTS,
-                }
-                or not feature_name
-                or not package_id
-        ):
-            return None
-
-        if self._package_needs_initialization(
-                feature_name,
-                package_id,
-        ):
-            return None
-
-        return (
-            feature_name,
-            package_id,
-        )
-
-    def _documents_target_for_item(
-            self,
-            item: QTreeWidgetItem,
-    ) -> Path | None:
-        kind = item.data(
-            0,
-            KIND_ROLE,
-        )
-        path_text = item.data(
-            0,
-            PATH_ROLE,
-        )
-
-        if not path_text:
-            return None
-
-        path = Path(
-            path_text
-        )
-
-        if kind == KIND_DOCUMENTS:
-            return path
-
-        if kind == KIND_PROJECT:
-            return project_documents_path(
-                path
-            )
-
-        if kind == KIND_FEATURE:
-            return feature_documents_path(
-                path
-            )
-
-        if kind == KIND_PACKAGE:
-            return package_documents_path(
-                path
-            )
-
-        return None
-
-    def _feature_needs_initialization(
+    def _feature_structure_state(
             self,
             feature_name: str,
-    ) -> bool:
-        if self.workspace_path is None:
-            return False
+    ) -> tuple[str, str | None]:
+        workspace = self.workspace_path
+
+        if workspace is None:
+            return (
+                _STATE_ERROR,
+                "No Project workspace is active.",
+            )
 
         try:
-            return not is_project_feature_structure_initialized(
-                self.workspace_path,
-                feature_name,
+            initialized = (
+                is_project_feature_structure_initialized(
+                    workspace,
+                    feature_name,
+                )
             )
-        except OSError:
-            return False
+        except OSError as error:
+            return (
+                _STATE_ERROR,
+                str(error),
+            )
 
-    def _package_needs_initialization(
+        return (
+            _STATE_COMPLETE
+            if initialized
+            else _STATE_INCOMPLETE,
+            None,
+        )
+
+    def _package_structure_state(
             self,
             feature_name: str,
             package_id: str,
-    ) -> bool:
-        if self.workspace_path is None:
-            return False
+    ) -> tuple[str, str | None]:
+        workspace = self.workspace_path
+
+        if workspace is None:
+            return (
+                _STATE_ERROR,
+                "No Project workspace is active.",
+            )
 
         try:
-            return not is_project_package_structure_initialized(
-                self.workspace_path,
-                feature_name,
-                package_id,
+            initialized = (
+                is_project_package_structure_initialized(
+                    workspace,
+                    feature_name,
+                    package_id,
+                )
             )
-        except OSError:
-            return False
+        except OSError as error:
+            return (
+                _STATE_ERROR,
+                str(error),
+            )
 
-    def _show_status(
+        return (
+            _STATE_COMPLETE
+            if initialized
+            else _STATE_INCOMPLETE,
+            None,
+        )
+
+    @staticmethod
+    def _structured_item_text(
+            name: str,
+            state: str,
+    ) -> str:
+        if state == _STATE_INCOMPLETE:
+            return (
+                f"{name} — Structure incomplete"
+            )
+
+        if state == _STATE_ERROR:
+            return (
+                f"{name} — Structure error"
+            )
+
+        return name
+
+    def _show_project_status(
             self,
             text: str,
     ) -> None:
-        self.status_label.setText(
-            text
-        )
+        self.status_label.setText(text)
         self.status_label.show()
+        self.page_stack.hide()
 
-    def _update_enabled_state(self) -> None:
-        enabled = self.workspace_path is not None
+    def _show_features_status(
+            self,
+            text: str,
+    ) -> None:
+        self.features_status_label.setText(text)
+        self.features_status_label.show()
 
+    def _show_feature_status(
+            self,
+            text: str,
+    ) -> None:
+        self.feature_status_label.setText(text)
+        self.feature_status_label.show()
+
+    def _show_packages_status(
+            self,
+            text: str,
+    ) -> None:
+        self.packages_status_label.setText(text)
+        self.packages_status_label.show()
+
+    def _update_enabled_state(
+            self,
+    ) -> None:
+        workspace_available = (
+            self.workspace_path is not None
+        )
+
+        self.project_refresh_button.setEnabled(
+            workspace_available
+        )
+        self.feature_refresh_button.setEnabled(
+            workspace_available
+        )
         self.add_feature_button.setEnabled(
-            enabled
+            workspace_available
         )
-        self.add_package_button.setEnabled(
-            enabled
+        self.back_to_features_button.setEnabled(
+            self.current_feature_name is not None
         )
-        self.refresh_button.setEnabled(
-            enabled
-        )
+
+        if self.current_feature_name is None:
+            self.add_package_button.setEnabled(
+                False
+            )
