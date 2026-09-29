@@ -94,6 +94,10 @@ class MainWindow(QMainWindow):
         self.file_tree = FileTreeView()
         self.file_tree.setModel(self.file_model)
 
+        self.file_tree.setColumnHidden(1, True)
+        self.file_tree.setColumnHidden(2, True)
+        self.file_tree.setColumnHidden(3, True)
+
         self.file_tree.doubleClicked.connect(
             self._open_file_from_tree
         )

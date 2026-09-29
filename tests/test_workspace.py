@@ -36,6 +36,17 @@ class WorkspaceProjectIntegrationTests(unittest.TestCase):
         self.window.close()
         self.registry_directory.cleanup()
 
+    def test_file_tree_displays_only_name_column(self) -> None:
+        self.assertFalse(
+            self.window.file_tree.isColumnHidden(0)
+        )
+
+        for column in (1, 2, 3):
+            with self.subTest(column=column):
+                self.assertTrue(
+                    self.window.file_tree.isColumnHidden(column)
+                )
+
     def _metadata(self, root: Path) -> ProjectMetadata:
         working_directory = root / "development" / "WorldMeshes"
 
