@@ -9,7 +9,12 @@ import zipfile
 from ai_project_organizer.implementation_package import (
     ImplementationPackageError,
     copy_implementation_package_archive,
+    discover_extracted_implementation_packages,
+    discover_implementation_package_archives,
+    extract_implementation_package_archive,
+    inspect_extracted_implementation_package,
     inspect_implementation_package_archive,
+    parse_implementation_package_readme,
 )
 
 
@@ -276,6 +281,392 @@ class ImplementationPackageTests(unittest.TestCase):
             self.assertFalse(
                 (contents / source.name).exists()
             )
+
+
+    def test_extracted_package_structure_is_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "Package"
+            root.mkdir()
+            (root / "Install.py").write_text(
+                "install",
+                encoding="utf-8",
+            )
+            (root / "README.txt").write_text(
+                "readme",
+                encoding="utf-8",
+            )
+            (root / "Project").mkdir()
+
+            inspection = inspect_extracted_implementation_package(
+                root
+            )
+
+            self.assertEqual(
+                inspection.root_path,
+                root,
+            )
+            self.assertEqual(
+                inspection.install_script_path,
+                root / "Install.py",
+            )
+            self.assertEqual(
+                inspection.readme_path,
+                root / "README.txt",
+            )
+            self.assertEqual(
+                inspection.project_payload_path,
+                root / "Project",
+            )
+
+    def test_extracted_package_rejects_missing_or_unexpected_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            base = Path(temporary_directory)
+
+            missing = base / "Missing"
+            missing.mkdir()
+            (missing / "Install.py").write_text(
+                "install",
+                encoding="utf-8",
+            )
+            (missing / "README.txt").write_text(
+                "readme",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ImplementationPackageError):
+                inspect_extracted_implementation_package(
+                    missing
+                )
+
+            unexpected = base / "Unexpected"
+            unexpected.mkdir()
+            (unexpected / "Install.py").write_text(
+                "install",
+                encoding="utf-8",
+            )
+            (unexpected / "README.txt").write_text(
+                "readme",
+                encoding="utf-8",
+            )
+            (unexpected / "Project").mkdir()
+            (unexpected / "extra.txt").write_text(
+                "extra",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ImplementationPackageError):
+                inspect_extracted_implementation_package(
+                    unexpected
+                )
+
+    def test_extracted_package_rejects_wrong_types(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            base = Path(temporary_directory)
+
+            wrong_install = base / "WrongInstall"
+            wrong_install.mkdir()
+            (wrong_install / "Install.py").mkdir()
+            (wrong_install / "README.txt").write_text(
+                "readme",
+                encoding="utf-8",
+            )
+            (wrong_install / "Project").mkdir()
+
+            with self.assertRaises(ImplementationPackageError):
+                inspect_extracted_implementation_package(
+                    wrong_install
+                )
+
+            wrong_project = base / "WrongProject"
+            wrong_project.mkdir()
+            (wrong_project / "Install.py").write_text(
+                "install",
+                encoding="utf-8",
+            )
+            (wrong_project / "README.txt").write_text(
+                "readme",
+                encoding="utf-8",
+            )
+            (wrong_project / "Project").write_text(
+                "not a directory",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ImplementationPackageError):
+                inspect_extracted_implementation_package(
+                    wrong_project
+                )
+
+    def test_extraction_publishes_valid_package_and_preserves_zip(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            archive_path = root / "package.zip"
+            contents = root / "Contents"
+            contents.mkdir()
+            self._write_valid_archive(
+                archive_path,
+                root_name="Example_FI01_Package",
+            )
+            original_bytes = archive_path.read_bytes()
+
+            extracted = extract_implementation_package_archive(
+                archive_path,
+                contents,
+            )
+
+            self.assertEqual(
+                extracted.root_path,
+                contents / "Example_FI01_Package",
+            )
+            self.assertTrue(
+                extracted.install_script_path.is_file()
+            )
+            self.assertTrue(
+                extracted.readme_path.is_file()
+            )
+            self.assertTrue(
+                extracted.project_payload_path.is_dir()
+            )
+            self.assertEqual(
+                archive_path.read_bytes(),
+                original_bytes,
+            )
+            self.assertFalse(
+                any(
+                    path.name.startswith(
+                        ".package-extract-"
+                    )
+                    for path in contents.iterdir()
+                )
+            )
+
+    def test_extraction_refuses_existing_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            archive_path = root / "package.zip"
+            contents = root / "Contents"
+            contents.mkdir()
+            self._write_valid_archive(
+                archive_path,
+                root_name="Example_FI01_Package",
+            )
+            destination = (
+                contents
+                / "Example_FI01_Package"
+            )
+            destination.mkdir()
+            marker = destination / "existing.txt"
+            marker.write_text(
+                "existing",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(FileExistsError):
+                extract_implementation_package_archive(
+                    archive_path,
+                    contents,
+                )
+
+            self.assertEqual(
+                marker.read_text(
+                    encoding="utf-8"
+                ),
+                "existing",
+            )
+            self.assertTrue(
+                archive_path.is_file()
+            )
+
+    def test_extraction_failure_cleans_temporary_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            archive_path = root / "package.zip"
+            contents = root / "Contents"
+            contents.mkdir()
+            self._write_valid_archive(
+                archive_path,
+                root_name="Example_FI01_Package",
+            )
+
+            with patch(
+                "ai_project_organizer.implementation_package.shutil.copyfileobj",
+                side_effect=PermissionError(
+                    "permission denied"
+                ),
+            ):
+                with self.assertRaises(PermissionError):
+                    extract_implementation_package_archive(
+                        archive_path,
+                        contents,
+                    )
+
+            self.assertFalse(
+                (
+                    contents
+                    / "Example_FI01_Package"
+                ).exists()
+            )
+            self.assertFalse(
+                any(
+                    path.name.startswith(
+                        ".package-extract-"
+                    )
+                    for path in contents.iterdir()
+                )
+            )
+            self.assertTrue(
+                archive_path.is_file()
+            )
+
+    def test_archive_and_extracted_discovery_ignore_unrelated_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            contents = Path(temporary_directory)
+
+            valid_archive = contents / "valid.zip"
+            self._write_valid_archive(
+                valid_archive,
+                root_name="Archive_FI01",
+            )
+            (contents / "random.zip").write_bytes(
+                b"not a zip"
+            )
+            (contents / "notes.txt").write_text(
+                "notes",
+                encoding="utf-8",
+            )
+
+            valid_root = contents / "ValidRoot"
+            valid_root.mkdir()
+            (valid_root / "Install.py").write_text(
+                "install",
+                encoding="utf-8",
+            )
+            (valid_root / "README.txt").write_text(
+                "readme",
+                encoding="utf-8",
+            )
+            (valid_root / "Project").mkdir()
+            (contents / "RandomDirectory").mkdir()
+
+            archives = discover_implementation_package_archives(
+                contents
+            )
+            extracted = discover_extracted_implementation_packages(
+                contents
+            )
+
+            self.assertEqual(
+                tuple(
+                    item.source_path.name
+                    for item in archives
+                ),
+                ("valid.zip",),
+            )
+            self.assertEqual(
+                tuple(
+                    item.root_path.name
+                    for item in extracted
+                ),
+                ("ValidRoot",),
+            )
+
+    def test_readme_parser_maps_standard_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            readme = Path(temporary_directory) / "README.txt"
+            readme.write_text(
+                (
+                    "# INSTALLATION\n"
+                    "\n"
+                    "Install text\n"
+                    "\n"
+                    "# SUMMARY\n"
+                    "\n"
+                    "Summary line 1\n"
+                    "Summary line 2\n"
+                    "\n"
+                    "# IMPLEMENTATION DETAILS\n"
+                    "\n"
+                    "Details\n"
+                    "\n"
+                    "# FILES CHANGED\n"
+                    "\n"
+                    "- file.py\n"
+                    "\n"
+                    "# MANUAL FOLLOW-UP\n"
+                    "\n"
+                    "None.\n"
+                    "\n"
+                    "# TESTING / VALIDATION\n"
+                    "\n"
+                    "python -m unittest discover -s tests\n"
+                    "\n"
+                    "# GIT COMMIT MESSAGE\n"
+                    "\n"
+                    "Add package inspection\n"
+                    "\n"
+                    "- inspect package\n"
+                ),
+                encoding="utf-8",
+            )
+
+            parsed = parse_implementation_package_readme(
+                readme
+            )
+
+            self.assertEqual(
+                parsed.installation,
+                "Install text",
+            )
+            self.assertEqual(
+                parsed.summary,
+                "Summary line 1\nSummary line 2",
+            )
+            self.assertEqual(
+                parsed.files_changed,
+                "- file.py",
+            )
+            self.assertEqual(
+                parsed.git_commit_message,
+                "Add package inspection\n\n- inspect package",
+            )
+
+    def test_readme_parser_allows_missing_sections_and_rejects_duplicates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            sparse = root / "sparse.txt"
+            sparse.write_text(
+                "# SUMMARY\n\nSummary only\n",
+                encoding="utf-8",
+            )
+
+            parsed = parse_implementation_package_readme(
+                sparse
+            )
+
+            self.assertEqual(
+                parsed.summary,
+                "Summary only",
+            )
+            self.assertEqual(
+                parsed.git_commit_message,
+                "",
+            )
+
+            duplicate = root / "duplicate.txt"
+            duplicate.write_text(
+                (
+                    "# SUMMARY\n"
+                    "One\n"
+                    "# SUMMARY\n"
+                    "Two\n"
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ImplementationPackageError):
+                parse_implementation_package_readme(
+                    duplicate
+                )
 
 
 if __name__ == "__main__":

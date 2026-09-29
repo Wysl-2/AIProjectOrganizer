@@ -3,12 +3,23 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
+import tempfile
 import zipfile
 
 
 _PACKAGE_ID_PATTERN = re.compile(
     r"(?=.*\d)[A-Z][A-Z0-9-]*"
 )
+
+_README_SECTION_FIELDS = {
+    "# INSTALLATION": "installation",
+    "# SUMMARY": "summary",
+    "# IMPLEMENTATION DETAILS": "implementation_details",
+    "# FILES CHANGED": "files_changed",
+    "# MANUAL FOLLOW-UP": "manual_follow_up",
+    "# TESTING / VALIDATION": "testing_validation",
+    "# GIT COMMIT MESSAGE": "git_commit_message",
+}
 
 
 class ImplementationPackageError(ValueError):
@@ -20,6 +31,25 @@ class ImplementationPackageArchive:
     source_path: Path
     package_root_name: str
     inferred_package_id: str | None
+
+
+@dataclass(frozen=True)
+class ExtractedImplementationPackage:
+    root_path: Path
+    install_script_path: Path
+    readme_path: Path
+    project_payload_path: Path
+
+
+@dataclass(frozen=True)
+class ImplementationPackageReadme:
+    installation: str
+    summary: str
+    implementation_details: str
+    files_changed: str
+    manual_follow_up: str
+    testing_validation: str
+    git_commit_message: str
 
 
 def inspect_implementation_package_archive(
@@ -34,11 +64,429 @@ def inspect_implementation_package_archive(
             source,
             "r",
         ) as archive:
-            infos = archive.infolist()
+            return _inspect_open_archive(
+                source,
+                archive,
+            )
     except zipfile.BadZipFile as error:
         raise ImplementationPackageError(
             "The selected file is not a valid ZIP archive."
         ) from error
+
+
+def copy_implementation_package_archive(
+    archive_path: str | Path,
+    contents_directory: str | Path,
+) -> Path:
+    inspection = inspect_implementation_package_archive(
+        archive_path
+    )
+    source = inspection.source_path
+    contents = _validated_contents_directory(
+        contents_directory
+    )
+    destination = (
+        contents
+        / source.name
+    )
+
+    if destination.exists() or destination.is_symlink():
+        raise FileExistsError(
+            "An implementation package with this file name "
+            f"already exists: {destination}"
+        )
+
+    created_destination = False
+
+    try:
+        with source.open(
+            "rb"
+        ) as source_stream:
+            with destination.open(
+                "xb"
+            ) as destination_stream:
+                created_destination = True
+                shutil.copyfileobj(
+                    source_stream,
+                    destination_stream,
+                )
+    except OSError:
+        if created_destination:
+            try:
+                destination.unlink()
+            except OSError:
+                pass
+        raise
+
+    return destination
+
+
+def extract_implementation_package_archive(
+    archive_path: str | Path,
+    contents_directory: str | Path,
+) -> ExtractedImplementationPackage:
+    source = _validated_archive_source(
+        archive_path
+    )
+    contents = _validated_contents_directory(
+        contents_directory
+    )
+
+    try:
+        with zipfile.ZipFile(
+            source,
+            "r",
+        ) as archive:
+            inspection = _inspect_open_archive(
+                source,
+                archive,
+            )
+            destination = (
+                contents
+                / inspection.package_root_name
+            )
+
+            if destination.exists() or destination.is_symlink():
+                raise FileExistsError(
+                    "An extracted implementation package already "
+                    f"exists at: {destination}"
+                )
+
+            with tempfile.TemporaryDirectory(
+                prefix=".package-extract-",
+                dir=contents,
+            ) as temporary_directory:
+                temporary_root = Path(
+                    temporary_directory
+                )
+
+                for info in archive.infolist():
+                    parts = _validated_member_parts(
+                        info.filename
+                    )
+                    target = temporary_root.joinpath(
+                        *parts
+                    )
+
+                    if info.is_dir():
+                        target.mkdir(
+                            parents=True,
+                            exist_ok=True,
+                        )
+                        continue
+
+                    target.parent.mkdir(
+                        parents=True,
+                        exist_ok=True,
+                    )
+
+                    with archive.open(
+                        info,
+                        "r",
+                    ) as source_stream:
+                        with target.open(
+                            "xb"
+                        ) as destination_stream:
+                            shutil.copyfileobj(
+                                source_stream,
+                                destination_stream,
+                            )
+
+                temporary_package_root = (
+                    temporary_root
+                    / inspection.package_root_name
+                )
+                inspect_extracted_implementation_package(
+                    temporary_package_root
+                )
+
+                if destination.exists() or destination.is_symlink():
+                    raise FileExistsError(
+                        "An extracted implementation package already "
+                        f"exists at: {destination}"
+                    )
+
+                temporary_package_root.rename(
+                    destination
+                )
+    except zipfile.BadZipFile as error:
+        raise ImplementationPackageError(
+            "The selected file is not a valid ZIP archive."
+        ) from error
+
+    return inspect_extracted_implementation_package(
+        destination
+    )
+
+
+def inspect_extracted_implementation_package(
+    package_root: str | Path,
+) -> ExtractedImplementationPackage:
+    root = Path(
+        package_root
+    ).expanduser()
+
+    if root.is_symlink():
+        raise ImplementationPackageError(
+            "Extracted implementation package roots must not "
+            "be symbolic links."
+        )
+
+    if not root.exists():
+        raise FileNotFoundError(
+            f"Extracted implementation package does not exist: {root}"
+        )
+
+    if not root.is_dir():
+        raise ImplementationPackageError(
+            "The extracted implementation package root is not "
+            "a directory."
+        )
+
+    entries = {
+        entry.name: entry
+        for entry in root.iterdir()
+    }
+    expected_names = {
+        "Install.py",
+        "README.txt",
+        "Project",
+    }
+
+    missing_names = (
+        expected_names
+        - entries.keys()
+    )
+
+    if missing_names:
+        missing_text = ", ".join(
+            sorted(
+                missing_names
+            )
+        )
+        raise ImplementationPackageError(
+            "The extracted implementation package is missing "
+            f"required content: {missing_text}"
+        )
+
+    unexpected_names = (
+        entries.keys()
+        - expected_names
+    )
+
+    if unexpected_names:
+        unexpected_text = ", ".join(
+            sorted(
+                unexpected_names
+            )
+        )
+        raise ImplementationPackageError(
+            "The extracted implementation package contains "
+            f"unexpected root content: {unexpected_text}"
+        )
+
+    install_script = entries[
+        "Install.py"
+    ]
+    readme = entries[
+        "README.txt"
+    ]
+    project_payload = entries[
+        "Project"
+    ]
+
+    _require_real_file(
+        install_script,
+        "Install.py",
+    )
+    _require_real_file(
+        readme,
+        "README.txt",
+    )
+    _require_real_directory(
+        project_payload,
+        "Project",
+    )
+
+    return ExtractedImplementationPackage(
+        root_path=root,
+        install_script_path=install_script,
+        readme_path=readme,
+        project_payload_path=project_payload,
+    )
+
+
+def discover_implementation_package_archives(
+    contents_directory: str | Path,
+) -> tuple[ImplementationPackageArchive, ...]:
+    contents = _validated_contents_directory(
+        contents_directory
+    )
+    entries = sorted(
+        contents.iterdir(),
+        key=lambda path: (
+            path.name.casefold(),
+            path.name,
+        ),
+    )
+    discovered: list[
+        ImplementationPackageArchive
+    ] = []
+
+    for entry in entries:
+        if (
+                entry.is_symlink()
+                or not entry.is_file()
+                or entry.suffix.casefold() != ".zip"
+        ):
+            continue
+
+        try:
+            discovered.append(
+                inspect_implementation_package_archive(
+                    entry
+                )
+            )
+        except ImplementationPackageError:
+            continue
+
+    return tuple(
+        discovered
+    )
+
+
+def discover_extracted_implementation_packages(
+    contents_directory: str | Path,
+) -> tuple[ExtractedImplementationPackage, ...]:
+    contents = _validated_contents_directory(
+        contents_directory
+    )
+    entries = sorted(
+        contents.iterdir(),
+        key=lambda path: (
+            path.name.casefold(),
+            path.name,
+        ),
+    )
+    discovered: list[
+        ExtractedImplementationPackage
+    ] = []
+
+    for entry in entries:
+        if (
+                entry.is_symlink()
+                or not entry.is_dir()
+        ):
+            continue
+
+        try:
+            discovered.append(
+                inspect_extracted_implementation_package(
+                    entry
+                )
+            )
+        except ImplementationPackageError:
+            continue
+
+    return tuple(
+        discovered
+    )
+
+
+def parse_implementation_package_readme(
+    readme_path: str | Path,
+) -> ImplementationPackageReadme:
+    path = Path(
+        readme_path
+    ).expanduser()
+
+    _require_real_file(
+        path,
+        "README.txt",
+    )
+
+    try:
+        text = path.read_text(
+            encoding="utf-8"
+        )
+    except UnicodeDecodeError as error:
+        raise ImplementationPackageError(
+            "README.txt is not valid UTF-8 text."
+        ) from error
+
+    section_lines = {
+        field_name: []
+        for field_name
+        in _README_SECTION_FIELDS.values()
+    }
+    seen_headings: set[str] = set()
+    current_field: str | None = None
+
+    for line in text.splitlines():
+        stripped_line = line.strip()
+
+        if stripped_line in _README_SECTION_FIELDS:
+            if stripped_line in seen_headings:
+                raise ImplementationPackageError(
+                    "README.txt contains a duplicate standardized "
+                    f"section: {stripped_line}"
+                )
+
+            seen_headings.add(
+                stripped_line
+            )
+            current_field = (
+                _README_SECTION_FIELDS[
+                    stripped_line
+                ]
+            )
+            continue
+
+        if current_field is not None:
+            section_lines[
+                current_field
+            ].append(
+                line
+            )
+
+    values = {
+        field_name: "\n".join(
+            lines
+        ).strip()
+        for field_name, lines
+        in section_lines.items()
+    }
+
+    return ImplementationPackageReadme(
+        installation=values[
+            "installation"
+        ],
+        summary=values[
+            "summary"
+        ],
+        implementation_details=values[
+            "implementation_details"
+        ],
+        files_changed=values[
+            "files_changed"
+        ],
+        manual_follow_up=values[
+            "manual_follow_up"
+        ],
+        testing_validation=values[
+            "testing_validation"
+        ],
+        git_commit_message=values[
+            "git_commit_message"
+        ],
+    )
+
+
+def _inspect_open_archive(
+    source: Path,
+    archive: zipfile.ZipFile,
+) -> ImplementationPackageArchive:
+    infos = archive.infolist()
 
     if not infos:
         raise ImplementationPackageError(
@@ -172,72 +620,6 @@ def inspect_implementation_package_archive(
     )
 
 
-def copy_implementation_package_archive(
-    archive_path: str | Path,
-    contents_directory: str | Path,
-) -> Path:
-    inspection = inspect_implementation_package_archive(
-        archive_path
-    )
-    source = inspection.source_path
-    contents = Path(
-        contents_directory
-    ).expanduser()
-
-    if contents.is_symlink():
-        raise NotADirectoryError(
-            "Package Contents directory must not be "
-            f"a symbolic link: {contents}"
-        )
-
-    if not contents.exists():
-        raise FileNotFoundError(
-            "Package Contents directory does not exist: "
-            f"{contents}"
-        )
-
-    if not contents.is_dir():
-        raise NotADirectoryError(
-            "Package Contents path is not a directory: "
-            f"{contents}"
-        )
-
-    destination = (
-        contents
-        / source.name
-    )
-
-    if destination.exists() or destination.is_symlink():
-        raise FileExistsError(
-            "An implementation package with this file name "
-            f"already exists: {destination}"
-        )
-
-    created_destination = False
-
-    try:
-        with source.open(
-            "rb"
-        ) as source_stream:
-            with destination.open(
-                "xb"
-            ) as destination_stream:
-                created_destination = True
-                shutil.copyfileobj(
-                    source_stream,
-                    destination_stream,
-                )
-    except OSError:
-        if created_destination:
-            try:
-                destination.unlink()
-            except OSError:
-                pass
-        raise
-
-    return destination
-
-
 def _validated_archive_source(
     archive_path: str | Path,
 ) -> Path:
@@ -267,6 +649,74 @@ def _validated_archive_source(
         )
 
     return source
+
+
+def _validated_contents_directory(
+    contents_directory: str | Path,
+) -> Path:
+    contents = Path(
+        contents_directory
+    ).expanduser()
+
+    if contents.is_symlink():
+        raise NotADirectoryError(
+            "Package Contents directory must not be "
+            f"a symbolic link: {contents}"
+        )
+
+    if not contents.exists():
+        raise FileNotFoundError(
+            "Package Contents directory does not exist: "
+            f"{contents}"
+        )
+
+    if not contents.is_dir():
+        raise NotADirectoryError(
+            "Package Contents path is not a directory: "
+            f"{contents}"
+        )
+
+    return contents
+
+
+def _require_real_file(
+    path: Path,
+    description: str,
+) -> None:
+    if path.is_symlink():
+        raise ImplementationPackageError(
+            f"{description} must not be a symbolic link."
+        )
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{description} does not exist: {path}"
+        )
+
+    if not path.is_file():
+        raise ImplementationPackageError(
+            f"{description} must be a regular file."
+        )
+
+
+def _require_real_directory(
+    path: Path,
+    description: str,
+) -> None:
+    if path.is_symlink():
+        raise ImplementationPackageError(
+            f"{description} must not be a symbolic link."
+        )
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{description} does not exist: {path}"
+        )
+
+    if not path.is_dir():
+        raise ImplementationPackageError(
+            f"{description} must be a directory."
+        )
 
 
 def _validated_member_parts(

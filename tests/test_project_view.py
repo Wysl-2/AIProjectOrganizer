@@ -241,5 +241,90 @@ class ProjectViewTests(unittest.TestCase):
             )
 
 
+    def test_package_artifact_context_accepts_package_and_contents_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(root)
+            create_project_feature(
+                workspace,
+                "Feature",
+            )
+            create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+
+            project = view.tree.topLevelItem(0)
+            feature = project.child(1).child(0)
+            package = feature.child(1).child(0)
+            documents = package.child(0)
+            contents = package.child(1)
+
+            self.assertEqual(
+                view._package_artifact_context(
+                    package
+                ),
+                (
+                    "Feature",
+                    "PKG01",
+                ),
+            )
+            self.assertEqual(
+                view._package_artifact_context(
+                    contents
+                ),
+                (
+                    "Feature",
+                    "PKG01",
+                ),
+            )
+            self.assertIsNone(
+                view._package_artifact_context(
+                    documents
+                )
+            )
+
+    def test_incomplete_package_has_no_artifact_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(root)
+            feature = create_project_feature(
+                workspace,
+                "Feature",
+            )
+            package_path = (
+                feature
+                / "Packages"
+                / "PKG01"
+            )
+            package_path.mkdir()
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+
+            package = (
+                view.tree
+                .topLevelItem(0)
+                .child(1)
+                .child(0)
+                .child(1)
+                .child(0)
+            )
+
+            self.assertIsNone(
+                view._package_artifact_context(
+                    package
+                )
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

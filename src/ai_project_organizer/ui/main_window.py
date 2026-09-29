@@ -1,8 +1,13 @@
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import QDir, QModelIndex, Qt
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QDir, QModelIndex, Qt, QUrl
+from PySide6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QDesktopServices,
+    QKeySequence,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -19,7 +24,11 @@ from PySide6.QtWidgets import (
 from ai_project_organizer.implementation_package import (
     ImplementationPackageError,
     copy_implementation_package_archive,
+    discover_extracted_implementation_packages,
+    discover_implementation_package_archives,
+    extract_implementation_package_archive,
     inspect_implementation_package_archive,
+    parse_implementation_package_readme,
 )
 from ai_project_organizer.project import (
     PROJECT_METADATA_FILENAME,
@@ -40,6 +49,9 @@ from ai_project_organizer.ui.add_package_dialog import (
 )
 from ai_project_organizer.ui.file_tree import FileTreeView
 from ai_project_organizer.ui.new_project_dialog import NewProjectDialog
+from ai_project_organizer.ui.package_inspector_dialog import (
+    PackageInspectorDialog,
+)
 from ai_project_organizer.ui.project_settings_dialog import (
     ProjectSettingsDialog,
 )
@@ -177,6 +189,12 @@ class MainWindow(QMainWindow):
         )
         self.project_view.implementation_package_import_requested.connect(
             self._import_implementation_package
+        )
+        self.project_view.extract_implementation_package_requested.connect(
+            self._extract_implementation_package
+        )
+        self.project_view.inspect_implementation_package_requested.connect(
+            self._inspect_implementation_package
         )
 
         self.workspace_navigation_tabs = QTabWidget()
@@ -1160,6 +1178,319 @@ class MainWindow(QMainWindow):
             return
 
         self.project_view.refresh()
+
+    def _package_contents_for_artifact_action(
+            self,
+            feature_name: str,
+            package_id: str,
+    ) -> Path | None:
+        if self.workspace_path is None:
+            return None
+
+        try:
+            package_path = project_package_path(
+                self.workspace_path,
+                feature_name,
+                package_id,
+            )
+        except ValueError as error:
+            QMessageBox.warning(
+                self,
+                "Package Unavailable",
+                str(error),
+            )
+            return None
+
+        if (
+                package_path.is_symlink()
+                or not package_path.exists()
+                or not package_path.is_dir()
+        ):
+            QMessageBox.warning(
+                self,
+                "Package Unavailable",
+                (
+                    "The selected Package no longer exists "
+                    "as an available Package directory."
+                ),
+            )
+            return None
+
+        if not self._ensure_project_package_structure(
+                feature_name,
+                package_id,
+        ):
+            return None
+
+        return package_contents_path(
+            package_path
+        )
+
+    def _extract_implementation_package(
+            self,
+            feature_name: str,
+            package_id: str,
+    ) -> None:
+        contents_path = self._package_contents_for_artifact_action(
+            feature_name,
+            package_id,
+        )
+
+        if contents_path is None:
+            return
+
+        try:
+            archives = discover_implementation_package_archives(
+                contents_path
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Extract Implementation Package",
+                (
+                    "Could not inspect Package Contents:"
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        if not archives:
+            QMessageBox.information(
+                self,
+                "No Implementation Package ZIP",
+                (
+                    "This Package does not contain a valid "
+                    "implementation-package ZIP."
+                ),
+            )
+            return
+
+        selected_archive = archives[0]
+
+        if len(archives) > 1:
+            archive_names = tuple(
+                archive.source_path.name
+                for archive in archives
+            )
+            selected_name, accepted = QInputDialog.getItem(
+                self,
+                "Extract Implementation Package",
+                "Archive:",
+                archive_names,
+                0,
+                False,
+            )
+
+            if not accepted:
+                return
+
+            selected_archive = next(
+                archive
+                for archive in archives
+                if archive.source_path.name == selected_name
+            )
+
+        try:
+            extract_implementation_package_archive(
+                selected_archive.source_path,
+                contents_path,
+            )
+        except FileExistsError as error:
+            QMessageBox.warning(
+                self,
+                "Implementation Package Already Extracted",
+                str(error),
+            )
+            return
+        except ImplementationPackageError as error:
+            QMessageBox.warning(
+                self,
+                "Invalid Implementation Package",
+                str(error),
+            )
+            return
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Extract Implementation Package",
+                (
+                    "Could not extract the implementation package:"
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        self.project_view.refresh()
+
+    def _inspect_implementation_package(
+            self,
+            feature_name: str,
+            package_id: str,
+    ) -> None:
+        contents_path = self._package_contents_for_artifact_action(
+            feature_name,
+            package_id,
+        )
+
+        if contents_path is None:
+            return
+
+        try:
+            extracted_packages = (
+                discover_extracted_implementation_packages(
+                    contents_path
+                )
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Inspect Implementation Package",
+                (
+                    "Could not inspect Package Contents:"
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        if not extracted_packages:
+            try:
+                archives = discover_implementation_package_archives(
+                    contents_path
+                )
+            except OSError as error:
+                QMessageBox.warning(
+                    self,
+                    "Unable to Inspect Implementation Package",
+                    (
+                        "Could not inspect Package Contents:"
+                        f"\n\n{error}"
+                    ),
+                )
+                return
+
+            if archives:
+                QMessageBox.information(
+                    self,
+                    "Implementation Package Not Extracted",
+                    (
+                        "A valid implementation-package ZIP is "
+                        "available, but it has not been extracted."
+                    ),
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "No Extracted Implementation Package",
+                    (
+                        "This Package does not contain a valid "
+                        "extracted implementation package."
+                    ),
+                )
+
+            return
+
+        selected_package = extracted_packages[0]
+
+        if len(extracted_packages) > 1:
+            package_names = tuple(
+                package.root_path.name
+                for package in extracted_packages
+            )
+            selected_name, accepted = QInputDialog.getItem(
+                self,
+                "Inspect Implementation Package",
+                "Extracted Package:",
+                package_names,
+                0,
+                False,
+            )
+
+            if not accepted:
+                return
+
+            selected_package = next(
+                package
+                for package in extracted_packages
+                if package.root_path.name == selected_name
+            )
+
+        try:
+            readme = parse_implementation_package_readme(
+                selected_package.readme_path
+            )
+        except ImplementationPackageError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Inspect Package README",
+                str(error),
+            )
+            return
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Inspect Package README",
+                (
+                    "Could not read README.txt:"
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        dialog = PackageInspectorDialog(
+            package_id,
+            selected_package,
+            readme,
+            contents_path,
+            parent=self,
+        )
+        dialog.open_readme_requested.connect(
+            self._open_file_path
+        )
+        dialog.open_contents_requested.connect(
+            self._open_package_contents_from_inspector
+        )
+        dialog.exec()
+
+    def _open_package_contents_from_inspector(
+            self,
+            contents_path: str,
+    ) -> None:
+        path = Path(
+            contents_path
+        )
+
+        if (
+                path.is_symlink()
+                or not path.exists()
+                or not path.is_dir()
+        ):
+            QMessageBox.warning(
+                self,
+                "Package Contents Unavailable",
+                (
+                    "The Package Contents directory is no longer "
+                    "available."
+                ),
+            )
+            return
+
+        opened = QDesktopServices.openUrl(
+            QUrl.fromLocalFile(
+                str(
+                    path
+                )
+            )
+        )
+
+        if not opened:
+            QMessageBox.warning(
+                self,
+                "Unable to Open Package Contents",
+                (
+                    "The system file manager could not open "
+                    "the Package Contents directory."
+                ),
+            )
 
     def _remove_registered_project(
             self,

@@ -323,6 +323,14 @@ class ProjectView(QWidget):
         str,
         str,
     )
+    extract_implementation_package_requested = Signal(
+        str,
+        str,
+    )
+    inspect_implementation_package_requested = Signal(
+        str,
+        str,
+    )
 
     def __init__(
             self,
@@ -869,6 +877,8 @@ class ProjectView(QWidget):
         add_package_action = None
         initialize_feature_action = None
         initialize_package_action = None
+        extract_package_action = None
+        inspect_package_action = None
         copy_path_action = None
         open_location_action = None
 
@@ -922,6 +932,21 @@ class ProjectView(QWidget):
         ):
             initialize_package_action = menu.addAction(
                 "Initialize Package Structure..."
+            )
+
+        package_context = self._package_artifact_context(
+            item
+        )
+
+        if package_context is not None:
+            if menu.actions():
+                menu.addSeparator()
+
+            extract_package_action = menu.addAction(
+                "Extract Implementation Package..."
+            )
+            inspect_package_action = menu.addAction(
+                "Inspect Implementation Package..."
             )
 
         if path_text:
@@ -980,6 +1005,26 @@ class ProjectView(QWidget):
             )
 
         elif (
+                selected is extract_package_action
+                and package_context is not None
+        ):
+            context_feature, context_package = package_context
+            self.extract_implementation_package_requested.emit(
+                context_feature,
+                context_package,
+            )
+
+        elif (
+                selected is inspect_package_action
+                and package_context is not None
+        ):
+            context_feature, context_package = package_context
+            self.inspect_implementation_package_requested.emit(
+                context_feature,
+                context_package,
+            )
+
+        elif (
                 selected is copy_path_action
                 and path_text
         ):
@@ -1004,6 +1049,44 @@ class ProjectView(QWidget):
                     str(target)
                 )
             )
+
+    def _package_artifact_context(
+            self,
+            item: QTreeWidgetItem,
+    ) -> tuple[str, str] | None:
+        kind = item.data(
+            0,
+            KIND_ROLE,
+        )
+        feature_name = item.data(
+            0,
+            FEATURE_ROLE,
+        )
+        package_id = item.data(
+            0,
+            PACKAGE_ROLE,
+        )
+
+        if (
+                kind not in {
+                    KIND_PACKAGE,
+                    KIND_CONTENTS,
+                }
+                or not feature_name
+                or not package_id
+        ):
+            return None
+
+        if self._package_needs_initialization(
+                feature_name,
+                package_id,
+        ):
+            return None
+
+        return (
+            feature_name,
+            package_id,
+        )
 
     def _documents_target_for_item(
             self,
