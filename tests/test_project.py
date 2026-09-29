@@ -33,6 +33,16 @@ class ProjectMetadataTests(unittest.TestCase):
             github_repository="Wysl-2/WorldMeshes",
         )
 
+    def _updated_metadata(self) -> ProjectMetadata:
+        metadata = self._metadata()
+
+        return ProjectMetadata(
+            name="Updated WorldMeshes",
+            working_directory=metadata.working_directory,
+            local_git_repository=metadata.local_git_repository,
+            github_repository=metadata.github_repository,
+        )
+
     def _write_metadata(self, workspace: Path, data: object) -> Path:
         metadata_path = workspace / PROJECT_METADATA_FILENAME
         metadata_path.write_text(
@@ -40,6 +50,16 @@ class ProjectMetadataTests(unittest.TestCase):
             encoding="utf-8",
         )
         return metadata_path
+
+    def _temporary_metadata_paths(
+            self,
+            workspace: Path,
+    ) -> list[Path]:
+        return list(
+            workspace.glob(
+                f".{PROJECT_METADATA_FILENAME}.*.tmp"
+            )
+        )
 
     def test_valid_metadata_is_normalized(self) -> None:
         metadata = ProjectMetadata(
@@ -102,6 +122,145 @@ class ProjectMetadataTests(unittest.TestCase):
             )
             self.assertTrue(
                 metadata_path.read_text(encoding="utf-8").endswith("\n")
+            )
+
+    def test_successful_save_replaces_existing_metadata_without_temp_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            initial = self._metadata()
+            updated = self._updated_metadata()
+
+            save_project_metadata(
+                workspace,
+                initial,
+            )
+            save_project_metadata(
+                workspace,
+                updated,
+            )
+
+            self.assertEqual(
+                load_project_metadata(workspace),
+                updated,
+            )
+            self.assertEqual(
+                self._temporary_metadata_paths(
+                    workspace
+                ),
+                [],
+            )
+
+    def test_failed_replace_preserves_existing_metadata_and_cleans_temp_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            initial = self._metadata()
+            updated = self._updated_metadata()
+            metadata_path = save_project_metadata(
+                workspace,
+                initial,
+            )
+            original_text = metadata_path.read_text(
+                encoding="utf-8"
+            )
+
+            with patch(
+                "ai_project_organizer.project.os.replace",
+                side_effect=PermissionError(
+                    "permission denied"
+                ),
+            ):
+                with self.assertRaises(
+                    PermissionError
+                ):
+                    save_project_metadata(
+                        workspace,
+                        updated,
+                    )
+
+            self.assertEqual(
+                metadata_path.read_text(
+                    encoding="utf-8"
+                ),
+                original_text,
+            )
+            self.assertEqual(
+                load_project_metadata(workspace),
+                initial,
+            )
+            self.assertEqual(
+                self._temporary_metadata_paths(
+                    workspace
+                ),
+                [],
+            )
+
+    def test_failed_fsync_preserves_existing_metadata_and_cleans_temp_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            initial = self._metadata()
+            updated = self._updated_metadata()
+            metadata_path = save_project_metadata(
+                workspace,
+                initial,
+            )
+            original_text = metadata_path.read_text(
+                encoding="utf-8"
+            )
+
+            with patch(
+                "ai_project_organizer.project.os.fsync",
+                side_effect=OSError(
+                    "sync failed"
+                ),
+            ):
+                with self.assertRaises(OSError):
+                    save_project_metadata(
+                        workspace,
+                        updated,
+                    )
+
+            self.assertEqual(
+                metadata_path.read_text(
+                    encoding="utf-8"
+                ),
+                original_text,
+            )
+            self.assertEqual(
+                self._temporary_metadata_paths(
+                    workspace
+                ),
+                [],
+            )
+
+    def test_failed_initial_replace_leaves_no_metadata_or_temp_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+
+            with patch(
+                "ai_project_organizer.project.os.replace",
+                side_effect=PermissionError(
+                    "permission denied"
+                ),
+            ):
+                with self.assertRaises(
+                    PermissionError
+                ):
+                    save_project_metadata(
+                        workspace,
+                        self._metadata(),
+                    )
+
+            self.assertFalse(
+                (
+                    workspace
+                    / PROJECT_METADATA_FILENAME
+                ).exists()
+            )
+            self.assertEqual(
+                self._temporary_metadata_paths(
+                    workspace
+                ),
+                [],
             )
 
     def test_missing_metadata_returns_none(self) -> None:
@@ -305,7 +464,6 @@ class ProjectMetadataTests(unittest.TestCase):
                 "unchanged",
             )
 
-
     def test_create_project_workspace_creates_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -385,6 +543,28 @@ class ProjectMetadataTests(unittest.TestCase):
                 side_effect=PermissionError("permission denied"),
             ):
                 with self.assertRaises(PermissionError):
+                    create_project_workspace(
+                        workspace,
+                        self._metadata(),
+                    )
+
+            self.assertFalse(
+                workspace.exists()
+            )
+
+    def test_failed_atomic_metadata_replace_removes_empty_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory) / "project"
+
+            with patch(
+                "ai_project_organizer.project.os.replace",
+                side_effect=PermissionError(
+                    "permission denied"
+                ),
+            ):
+                with self.assertRaises(
+                    PermissionError
+                ):
                     create_project_workspace(
                         workspace,
                         self._metadata(),

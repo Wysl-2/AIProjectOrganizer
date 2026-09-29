@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -110,26 +112,59 @@ def save_project_metadata(
 
     metadata_path = workspace / PROJECT_METADATA_FILENAME
 
-    if metadata_path.is_symlink():
-        raise ProjectMetadataError(
-            f"Project metadata file must not be a symbolic link: {metadata_path}"
-        )
-
-    if metadata_path.exists() and not metadata_path.is_file():
-        raise ProjectMetadataError(
-            f"Project metadata path is not a file: {metadata_path}"
-        )
-
-    serialized = json.dumps(
-        _metadata_to_mapping(metadata),
-        indent=2,
-        ensure_ascii=False,
+    _validate_metadata_destination(
+        metadata_path
     )
 
-    metadata_path.write_text(
-        serialized + "\n",
-        encoding="utf-8",
+    serialized = (
+        json.dumps(
+            _metadata_to_mapping(metadata),
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n"
     )
+
+    temporary_path: Path | None = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=workspace,
+            prefix=f".{metadata_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(
+                temporary_file.name
+            )
+            temporary_file.write(
+                serialized
+            )
+            temporary_file.flush()
+            os.fsync(
+                temporary_file.fileno()
+            )
+
+        _validate_metadata_destination(
+            metadata_path
+        )
+
+        os.replace(
+            temporary_path,
+            metadata_path,
+        )
+        temporary_path = None
+
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
 
     return metadata_path
 
@@ -191,6 +226,20 @@ def create_project_workspace(
 
 def _metadata_path(workspace_path: str | Path) -> Path:
     return Path(workspace_path).expanduser() / PROJECT_METADATA_FILENAME
+
+
+def _validate_metadata_destination(
+    metadata_path: Path,
+) -> None:
+    if metadata_path.is_symlink():
+        raise ProjectMetadataError(
+            f"Project metadata file must not be a symbolic link: {metadata_path}"
+        )
+
+    if metadata_path.exists() and not metadata_path.is_file():
+        raise ProjectMetadataError(
+            f"Project metadata path is not a file: {metadata_path}"
+        )
 
 
 def _metadata_from_mapping(raw_metadata: object) -> ProjectMetadata:
