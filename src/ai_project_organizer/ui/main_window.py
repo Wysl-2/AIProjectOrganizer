@@ -29,6 +29,9 @@ from ai_project_organizer.project_registry import (
     load_project_registry,
     save_project_registry,
 )
+from ai_project_organizer.ui.add_package_dialog import (
+    AddPackageDialog,
+)
 from ai_project_organizer.ui.file_tree import FileTreeView
 from ai_project_organizer.ui.new_project_dialog import NewProjectDialog
 from ai_project_organizer.ui.project_settings_dialog import (
@@ -47,7 +50,11 @@ from ai_project_organizer.workspace_paths import (
 )
 from ai_project_organizer.workspace_structure import (
     create_project_feature,
+    create_project_package,
+    discover_project_features,
+    initialize_project_feature_structure,
     initialize_project_workspace_structure,
+    is_project_feature_structure_initialized,
     is_project_workspace_structure_initialized,
 )
 
@@ -250,6 +257,14 @@ class MainWindow(QMainWindow):
             self._add_feature
         )
 
+        self.add_package_action = QAction(
+            "Add Package...",
+            self,
+        )
+        self.add_package_action.triggered.connect(
+            self._add_package
+        )
+
         self.configure_project_action = QAction(
             "Configure Project...",
             self,
@@ -272,6 +287,9 @@ class MainWindow(QMainWindow):
         project_menu.addSeparator()
         project_menu.addAction(
             self.add_feature_action
+        )
+        project_menu.addAction(
+            self.add_package_action
         )
         project_menu.addSeparator()
         project_menu.addAction(
@@ -461,6 +479,168 @@ class MainWindow(QMainWindow):
                     f"\n\n{error}"
                 ),
             )
+
+    def _add_package(self) -> None:
+        if self.workspace_path is None:
+            return
+
+        if not self._ensure_project_workspace_structure():
+            return
+
+        try:
+            features = discover_project_features(
+                self.workspace_path
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Add Package",
+                (
+                    "Could not discover Project Features:"
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        if not features:
+            QMessageBox.information(
+                self,
+                "No Features Available",
+                "Create a Feature before adding a Package.",
+            )
+            return
+
+        dialog = AddPackageDialog(
+            tuple(
+                feature.name
+                for feature in features
+            ),
+            parent=self,
+        )
+
+        while True:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            feature_name = dialog.feature_name()
+            package_id = dialog.package_id()
+
+            if not self._ensure_project_feature_structure(
+                    feature_name
+            ):
+                return
+
+            try:
+                create_project_package(
+                    self.workspace_path,
+                    feature_name,
+                    package_id,
+                )
+            except ValueError as error:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Package ID",
+                    str(error),
+                )
+                continue
+            except FileExistsError as error:
+                QMessageBox.warning(
+                    self,
+                    "Package Already Exists",
+                    str(error),
+                )
+                continue
+            except OSError as error:
+                QMessageBox.warning(
+                    self,
+                    "Unable to Add Package",
+                    (
+                        "Could not create the Package:"
+                        f"\n\n{error}"
+                    ),
+                )
+                return
+
+            return
+
+    def _ensure_project_feature_structure(
+            self,
+            feature_name: str,
+    ) -> bool:
+        if self.workspace_path is None:
+            return False
+
+        try:
+            initialized = (
+                is_project_feature_structure_initialized(
+                    self.workspace_path,
+                    feature_name,
+                )
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Initialize Feature Structure",
+                (
+                    "The Feature structure could not be "
+                    f"validated.\n\n{error}"
+                ),
+            )
+            return False
+
+        if initialized:
+            return True
+
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle(
+            "Initialize Feature Structure"
+        )
+        message_box.setIcon(
+            QMessageBox.Icon.Question
+        )
+        message_box.setText(
+            f'Initialize the Feature "{feature_name}"?'
+        )
+        message_box.setInformativeText(
+            (
+                "This Feature does not contain the standard "
+                "Documents and Packages folders.\n\n"
+                "Create the missing standard folders now? "
+                "Existing files and folders will not be moved "
+                "or deleted."
+            )
+        )
+        message_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+        )
+        message_box.setDefaultButton(
+            QMessageBox.StandardButton.No
+        )
+
+        if (
+                message_box.exec()
+                != QMessageBox.StandardButton.Yes
+        ):
+            return False
+
+        try:
+            initialize_project_feature_structure(
+                self.workspace_path,
+                feature_name,
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Initialize Feature Structure",
+                (
+                    "Could not create the standard Feature "
+                    f"structure.\n\n{error}"
+                ),
+            )
+            return False
+
+        return True
 
     def _ensure_project_workspace_structure(
             self,
@@ -1842,6 +2022,9 @@ class MainWindow(QMainWindow):
             has_document
         )
         self.add_feature_action.setEnabled(
+            has_workspace
+        )
+        self.add_package_action.setEnabled(
             has_workspace
         )
         self.configure_project_action.setEnabled(
