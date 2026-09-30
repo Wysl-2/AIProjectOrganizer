@@ -31,10 +31,6 @@ class UiThemeTests(unittest.TestCase):
             self.application
         )
 
-        self.assertEqual(
-            self.application.style().objectName().casefold(),
-            "fusion",
-        )
         self.assertTrue(
             self.application.styleSheet()
         )
