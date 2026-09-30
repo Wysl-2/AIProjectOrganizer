@@ -146,6 +146,10 @@ QTreeView::item {{
     padding: 3px 6px;
 }}
 
+QListWidget[role="packageList"]::item {{
+    padding: 6px 8px;
+}}
+
 QListView::item:hover,
 QListWidget::item:hover,
 QTreeView::item:hover {{
@@ -322,6 +326,10 @@ QLabel[role="secondary"] {{
 
 QLabel[role="error"] {{
     color: {ERROR_COLOR};
+}}
+
+QLabel[role="warning"] {{
+    color: {WARNING_COLOR};
 }}
 
 QLabel[role="metadataLabel"] {{

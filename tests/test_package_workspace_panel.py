@@ -17,6 +17,10 @@ from PySide6.QtWidgets import QApplication
 from ai_project_organizer.ui.package_workspace_panel import (
     PackageWorkspacePanel,
 )
+from ai_project_organizer.ui.theme import (
+    ERROR_COLOR,
+    WARNING_COLOR,
+)
 from ai_project_organizer.workspace_structure import (
     create_project_feature,
     create_project_package,
@@ -120,6 +124,12 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             ),
             "secondary",
         )
+        self.assertEqual(
+            panel.package_list.property(
+                "role"
+            ),
+            "packageList",
+        )
         self.assertIs(
             panel.splitter.widget(
                 0
@@ -133,26 +143,56 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             panel.details_stack,
         )
         self.assertEqual(
+            panel.no_selection_title_label.text(),
+            "No Package Selected",
+        )
+        self.assertEqual(
+            panel.no_selection_title_label.property(
+                "role"
+            ),
+            "pageTitle",
+        )
+        self.assertEqual(
+            panel.package_title_label.property(
+                "role"
+            ),
+            "pageTitle",
+        )
+        self.assertEqual(
             panel.artifact_panel.title_label.text(),
             "IMPLEMENTATION PACKAGE",
         )
         self.assertEqual(
-            panel.archive_status_label.property(
-                "role"
-            ),
-            "secondary",
+            panel.archive_metadata_label.text(),
+            "ZIP",
         )
         self.assertEqual(
-            panel.extracted_status_label.property(
+            panel.archive_metadata_label.property(
                 "role"
             ),
-            "secondary",
+            "metadataLabel",
+        )
+        self.assertEqual(
+            panel.extracted_metadata_label.text(),
+            "Extracted",
+        )
+        self.assertEqual(
+            panel.extracted_metadata_label.property(
+                "role"
+            ),
+            "metadataLabel",
         )
         self.assertEqual(
             panel.artifact_error_label.property(
                 "role"
             ),
             "error",
+        )
+        self.assertTrue(
+            panel.archive_metadata_label.isHidden()
+        )
+        self.assertTrue(
+            panel.extracted_metadata_label.isHidden()
         )
         self.assertFalse(
             panel.import_package_button.icon().isNull()
@@ -174,6 +214,12 @@ class PackageWorkspacePanelTests(unittest.TestCase):
         )
         self.assertFalse(
             panel.open_contents_button.icon().isNull()
+        )
+        self.assertEqual(
+            panel.recovery_title_label.property(
+                "role"
+            ),
+            "pageTitle",
         )
 
     @staticmethod
@@ -300,6 +346,10 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 panel.details_stack.currentWidget(),
                 panel.no_selection_page,
             )
+            self.assertEqual(
+                panel.no_selection_title_label.text(),
+                "No Package Selected",
+            )
             self.assertIn(
                 "Select a Package",
                 panel.no_selection_label.text(),
@@ -330,6 +380,10 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             self.assertIn(
                 "No Packages",
                 panel.status_label.text(),
+            )
+            self.assertEqual(
+                panel.no_selection_title_label.text(),
+                "No Packages",
             )
             self.assertIn(
                 "Create a Package",
@@ -378,6 +432,10 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
             self.assertIsNone(
                 panel.current_package_id
+            )
+            self.assertEqual(
+                panel.no_selection_title_label.text(),
+                "No Package Selected",
             )
             self.assertIn(
                 "Select a Package",
@@ -511,7 +569,7 @@ class PackageWorkspacePanelTests(unittest.TestCase):
 
             self.assertEqual(
                 panel.archive_status_label.text(),
-                "ZIP: package.zip",
+                "package.zip",
             )
             self.assertTrue(
                 panel.extract_package_button.isEnabled()
@@ -540,7 +598,7 @@ class PackageWorkspacePanelTests(unittest.TestCase):
 
             self.assertEqual(
                 panel.extracted_status_label.text(),
-                "Extracted: PackageExtracted",
+                "PackageExtracted",
             )
             self.assertTrue(
                 panel.inspect_package_button.isEnabled()
@@ -619,11 +677,11 @@ class PackageWorkspacePanelTests(unittest.TestCase):
 
             self.assertEqual(
                 panel.archive_status_label.text(),
-                "ZIPs: 2",
+                "2 archives",
             )
             self.assertEqual(
                 panel.extracted_status_label.text(),
-                "Extracted packages: 2",
+                "2 packages",
             )
             self.assertTrue(
                 panel.extract_package_button.isEnabled()
@@ -668,11 +726,11 @@ class PackageWorkspacePanelTests(unittest.TestCase):
 
             self.assertEqual(
                 panel.archive_status_label.text(),
-                "ZIP: None",
+                "None",
             )
             self.assertEqual(
                 panel.extracted_status_label.text(),
-                "Extracted: None",
+                "None",
             )
             self.assertFalse(
                 panel.extract_package_button.isEnabled()
@@ -733,6 +791,12 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 "",
             )
             self.assertTrue(
+                panel.archive_metadata_label.isHidden()
+            )
+            self.assertTrue(
+                panel.extracted_metadata_label.isHidden()
+            )
+            self.assertTrue(
                 panel.import_package_button.isEnabled()
             )
             self.assertFalse(
@@ -781,11 +845,11 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
             self.assertEqual(
                 panel.archive_status_label.text(),
-                "ZIP: None",
+                "None",
             )
             self.assertEqual(
                 panel.extracted_status_label.text(),
-                "Extracted: None",
+                "None",
             )
 
     def test_import_cancel_emits_nothing(self) -> None:
@@ -993,6 +1057,27 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 "incomplete",
                 panel.recovery_status_label.text().lower(),
             )
+            self.assertEqual(
+                panel.recovery_status_label.property(
+                    "role"
+                ),
+                "warning",
+            )
+            item = panel.package_list.item(
+                0
+            )
+            self.assertIn(
+                "Structure incomplete",
+                item.text(),
+            )
+            self.assertEqual(
+                item.foreground().color().name().upper(),
+                WARNING_COLOR,
+            )
+            self.assertIn(
+                "incomplete",
+                item.toolTip().lower(),
+            )
 
             emitted = []
             panel.initialize_package_requested.connect(
@@ -1015,6 +1100,74 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                     )
                 ],
             )
+
+    def test_structure_error_uses_error_presentation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._workspace(
+                root
+            )
+            package = (
+                workspace
+                / "Features"
+                / "Feature"
+                / "Packages"
+                / "PKG01"
+            )
+            package.mkdir()
+
+            panel = PackageWorkspacePanel()
+
+            with patch(
+                "ai_project_organizer.ui.package_workspace_panel.is_project_package_structure_initialized",
+                side_effect=OSError(
+                    "permission denied"
+                ),
+            ):
+                panel.set_feature(
+                    workspace,
+                    "Feature",
+                )
+                item = panel.package_list.item(
+                    0
+                )
+
+                self.assertIn(
+                    "Structure error",
+                    item.text(),
+                )
+                self.assertEqual(
+                    item.foreground().color().name().upper(),
+                    ERROR_COLOR,
+                )
+                self.assertIn(
+                    "permission denied",
+                    item.toolTip(),
+                )
+
+                panel.package_list.setCurrentRow(
+                    0
+                )
+
+                self.assertIs(
+                    panel.details_stack.currentWidget(),
+                    panel.recovery_page,
+                )
+                self.assertEqual(
+                    panel.recovery_status_label.property(
+                        "role"
+                    ),
+                    "error",
+                )
+                self.assertIn(
+                    "permission denied",
+                    panel.recovery_status_label.text(),
+                )
+                self.assertTrue(
+                    panel.initialize_package_button.isHidden()
+                )
 
     def test_incomplete_package_transitions_to_complete_without_losing_selection(
             self,
@@ -1090,7 +1243,7 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
             self.assertEqual(
                 panel.archive_status_label.text(),
-                "ZIP: package.zip",
+                "package.zip",
             )
 
             shutil.rmtree(
@@ -1141,6 +1294,10 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
             self.assertFalse(
                 panel.open_contents_button.isEnabled()
+            )
+            self.assertEqual(
+                panel.no_selection_title_label.text(),
+                "No Packages",
             )
             self.assertIn(
                 "Create a Package",
@@ -1224,6 +1381,10 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             self.assertIn(
                 "Unable to discover Packages",
                 panel.status_label.text(),
+            )
+            self.assertEqual(
+                panel.no_selection_title_label.text(),
+                "Packages Unavailable",
             )
             self.assertIn(
                 "unavailable",

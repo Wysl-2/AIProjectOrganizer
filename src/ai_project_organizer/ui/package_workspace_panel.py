@@ -1,10 +1,11 @@
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidgetItem,
@@ -31,6 +32,10 @@ from ai_project_organizer.ui.resources import (
 )
 from ai_project_organizer.ui.section_panel import (
     SectionPanel,
+)
+from ai_project_organizer.ui.theme import (
+    ERROR_COLOR,
+    WARNING_COLOR,
 )
 from ai_project_organizer.workspace_structure import (
     discover_feature_packages,
@@ -117,6 +122,10 @@ class PackageWorkspacePanel(SectionPanel):
             allow_background=True,
             parent=self,
         )
+        self.package_list.setProperty(
+            "role",
+            "packageList",
+        )
         self.package_list.currentItemChanged.connect(
             self._package_selection_changed
         )
@@ -189,7 +198,13 @@ class PackageWorkspacePanel(SectionPanel):
         )
         self.splitter.setStretchFactor(
             1,
-            2,
+            3,
+        )
+        self.splitter.setSizes(
+            [
+                220,
+                660,
+            ]
         )
 
         self.content_layout.addWidget(
@@ -200,6 +215,9 @@ class PackageWorkspacePanel(SectionPanel):
             1,
         )
 
+        self._set_artifact_metadata_visible(
+            False
+        )
         self._set_artifact_action_state(
             can_import=False,
             can_extract=False,
@@ -214,6 +232,15 @@ class PackageWorkspacePanel(SectionPanel):
     ) -> QWidget:
         page = QWidget(
             self
+        )
+
+        self.no_selection_title_label = QLabel(
+            "No Package Selected",
+            page,
+        )
+        self.no_selection_title_label.setProperty(
+            "role",
+            "pageTitle",
         )
 
         self.no_selection_label = QLabel(
@@ -234,6 +261,18 @@ class PackageWorkspacePanel(SectionPanel):
         layout = QVBoxLayout(
             page
         )
+        layout.setContentsMargins(
+            12,
+            12,
+            12,
+            12,
+        )
+        layout.setSpacing(
+            6
+        )
+        layout.addWidget(
+            self.no_selection_title_label
+        )
         layout.addWidget(
             self.no_selection_label
         )
@@ -253,6 +292,10 @@ class PackageWorkspacePanel(SectionPanel):
         self.package_title_label = QLabel(
             page
         )
+        self.package_title_label.setProperty(
+            "role",
+            "pageTitle",
+        )
 
         self.package_documents_panel = DocumentListPanel(
             page
@@ -269,15 +312,29 @@ class PackageWorkspacePanel(SectionPanel):
             page,
         )
 
+        self.archive_metadata_label = QLabel(
+            "ZIP",
+            self.artifact_panel,
+        )
+        self.archive_metadata_label.setProperty(
+            "role",
+            "metadataLabel",
+        )
+
         self.archive_status_label = QLabel(
             self.artifact_panel
         )
         self.archive_status_label.setWordWrap(
             True
         )
-        self.archive_status_label.setProperty(
+
+        self.extracted_metadata_label = QLabel(
+            "Extracted",
+            self.artifact_panel,
+        )
+        self.extracted_metadata_label.setProperty(
             "role",
-            "secondary",
+            "metadataLabel",
         )
 
         self.extracted_status_label = QLabel(
@@ -286,9 +343,43 @@ class PackageWorkspacePanel(SectionPanel):
         self.extracted_status_label.setWordWrap(
             True
         )
-        self.extracted_status_label.setProperty(
-            "role",
-            "secondary",
+
+        metadata_layout = QGridLayout()
+        metadata_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        metadata_layout.setHorizontalSpacing(
+            12
+        )
+        metadata_layout.setVerticalSpacing(
+            4
+        )
+        metadata_layout.addWidget(
+            self.archive_metadata_label,
+            0,
+            0,
+        )
+        metadata_layout.addWidget(
+            self.archive_status_label,
+            0,
+            1,
+        )
+        metadata_layout.addWidget(
+            self.extracted_metadata_label,
+            1,
+            0,
+        )
+        metadata_layout.addWidget(
+            self.extracted_status_label,
+            1,
+            1,
+        )
+        metadata_layout.setColumnStretch(
+            1,
+            1,
         )
 
         self.artifact_error_label = QLabel(
@@ -367,21 +458,55 @@ class PackageWorkspacePanel(SectionPanel):
             self._open_selected_package_contents
         )
 
-        primary_actions = QHBoxLayout()
-        primary_actions.addWidget(
-            self.import_package_button
+        primary_actions = QGridLayout()
+        primary_actions.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        primary_actions.setHorizontalSpacing(
+            4
+        )
+        primary_actions.setVerticalSpacing(
+            4
         )
         primary_actions.addWidget(
-            self.extract_package_button
+            self.import_package_button,
+            0,
+            0,
         )
         primary_actions.addWidget(
-            self.inspect_package_button
+            self.extract_package_button,
+            0,
+            1,
         )
         primary_actions.addWidget(
-            self.install_package_button
+            self.inspect_package_button,
+            1,
+            0,
+        )
+        primary_actions.addWidget(
+            self.install_package_button,
+            1,
+            1,
+        )
+        primary_actions.setColumnStretch(
+            0,
+            1,
+        )
+        primary_actions.setColumnStretch(
+            1,
+            1,
         )
 
         secondary_actions = QHBoxLayout()
+        secondary_actions.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
         secondary_actions.addWidget(
             self.open_contents_button
         )
@@ -389,11 +514,8 @@ class PackageWorkspacePanel(SectionPanel):
             1
         )
 
-        self.artifact_panel.content_layout.addWidget(
-            self.archive_status_label
-        )
-        self.artifact_panel.content_layout.addWidget(
-            self.extracted_status_label
+        self.artifact_panel.content_layout.addLayout(
+            metadata_layout
         )
         self.artifact_panel.content_layout.addWidget(
             self.artifact_error_label
@@ -407,6 +529,15 @@ class PackageWorkspacePanel(SectionPanel):
 
         layout = QVBoxLayout(
             page
+        )
+        layout.setContentsMargins(
+            8,
+            4,
+            8,
+            8,
+        )
+        layout.setSpacing(
+            10
         )
         layout.addWidget(
             self.package_title_label
@@ -431,12 +562,20 @@ class PackageWorkspacePanel(SectionPanel):
         self.recovery_title_label = QLabel(
             page
         )
+        self.recovery_title_label.setProperty(
+            "role",
+            "pageTitle",
+        )
 
         self.recovery_status_label = QLabel(
             page
         )
         self.recovery_status_label.setWordWrap(
             True
+        )
+        self.recovery_status_label.setProperty(
+            "role",
+            "secondary",
         )
 
         self.initialize_package_button = QPushButton(
@@ -450,6 +589,15 @@ class PackageWorkspacePanel(SectionPanel):
 
         layout = QVBoxLayout(
             page
+        )
+        layout.setContentsMargins(
+            12,
+            12,
+            12,
+            12,
+        )
+        layout.setSpacing(
+            6
         )
         layout.addWidget(
             self.recovery_title_label
@@ -538,7 +686,8 @@ class PackageWorkspacePanel(SectionPanel):
                 (
                     "Package details are unavailable while "
                     "Packages cannot be discovered."
-                )
+                ),
+                title="Packages Unavailable",
             )
             self._update_enabled_state()
             return
@@ -576,14 +725,35 @@ class PackageWorkspacePanel(SectionPanel):
                 state,
             )
 
-            if error_text is not None:
-                item.setData(
-                    _STRUCTURE_ERROR_ROLE,
-                    error_text,
+            if state == _STATE_INCOMPLETE:
+                item.setForeground(
+                    QBrush(
+                        QColor(
+                            WARNING_COLOR
+                        )
+                    )
                 )
                 item.setToolTip(
-                    error_text
+                    "Package structure is incomplete."
                 )
+
+            elif state == _STATE_ERROR:
+                item.setForeground(
+                    QBrush(
+                        QColor(
+                            ERROR_COLOR
+                        )
+                    )
+                )
+
+                if error_text is not None:
+                    item.setData(
+                        _STRUCTURE_ERROR_ROLE,
+                        error_text,
+                    )
+                    item.setToolTip(
+                        error_text
+                    )
 
             self.package_list.addItem(
                 item
@@ -608,7 +778,8 @@ class PackageWorkspacePanel(SectionPanel):
                 (
                     "Create a Package to begin organizing "
                     "implementation work for this Feature."
-                )
+                ),
+                title="No Packages",
             )
             self._update_enabled_state()
             return
@@ -702,11 +873,19 @@ class PackageWorkspacePanel(SectionPanel):
         )
 
         if state == _STATE_INCOMPLETE:
+            self._set_label_role(
+                self.recovery_status_label,
+                "warning",
+            )
             self.recovery_status_label.setText(
                 "Package structure incomplete."
             )
             self.initialize_package_button.show()
         else:
+            self._set_label_role(
+                self.recovery_status_label,
+                "error",
+            )
             self.recovery_status_label.setText(
                 (
                     "Unable to inspect Package structure."
@@ -761,8 +940,9 @@ class PackageWorkspacePanel(SectionPanel):
         self.extracted_status_label.clear()
         self.artifact_error_label.clear()
         self.artifact_error_label.hide()
-        self.archive_status_label.show()
-        self.extracted_status_label.show()
+        self._set_artifact_metadata_visible(
+            True
+        )
 
         self._set_artifact_action_state(
             can_import=True,
@@ -783,9 +963,10 @@ class PackageWorkspacePanel(SectionPanel):
             )
         except OSError as error:
             self.archive_status_label.clear()
-            self.archive_status_label.hide()
             self.extracted_status_label.clear()
-            self.extracted_status_label.hide()
+            self._set_artifact_metadata_visible(
+                False
+            )
             self.artifact_error_label.setText(
                 (
                     "Unable to inspect Package Contents:"
@@ -796,28 +977,21 @@ class PackageWorkspacePanel(SectionPanel):
             return
 
         if not archives:
-            archive_text = "ZIP: None"
+            archive_text = "None"
         elif len(archives) == 1:
-            archive_text = (
-                "ZIP: "
-                f"{archives[0].source_path.name}"
-            )
+            archive_text = archives[0].source_path.name
         else:
             archive_text = (
-                f"ZIPs: {len(archives)}"
+                f"{len(archives)} archives"
             )
 
         if not extracted_packages:
-            extracted_text = "Extracted: None"
+            extracted_text = "None"
         elif len(extracted_packages) == 1:
-            extracted_text = (
-                "Extracted: "
-                f"{extracted_packages[0].root_path.name}"
-            )
+            extracted_text = extracted_packages[0].root_path.name
         else:
             extracted_text = (
-                "Extracted packages: "
-                f"{len(extracted_packages)}"
+                f"{len(extracted_packages)} packages"
             )
 
         self.archive_status_label.setText(
@@ -839,6 +1013,43 @@ class PackageWorkspacePanel(SectionPanel):
             ),
             can_open_contents=contents_available,
         )
+
+    def _set_artifact_metadata_visible(
+            self,
+            visible: bool,
+    ) -> None:
+        for label in (
+                self.archive_metadata_label,
+                self.archive_status_label,
+                self.extracted_metadata_label,
+                self.extracted_status_label,
+        ):
+            label.setVisible(
+                visible
+            )
+
+    @staticmethod
+    def _set_label_role(
+            label: QLabel,
+            role: str,
+    ) -> None:
+        if label.property(
+                "role"
+        ) == role:
+            return
+
+        label.setProperty(
+            "role",
+            role,
+        )
+        style = label.style()
+        style.unpolish(
+            label
+        )
+        style.polish(
+            label
+        )
+        label.update()
 
     def _set_artifact_action_state(
             self,
@@ -1212,13 +1423,18 @@ class PackageWorkspacePanel(SectionPanel):
             None
         )
         self.archive_status_label.clear()
-        self.archive_status_label.hide()
         self.extracted_status_label.clear()
-        self.extracted_status_label.hide()
+        self._set_artifact_metadata_visible(
+            False
+        )
         self.artifact_error_label.clear()
         self.artifact_error_label.hide()
         self.recovery_title_label.clear()
         self.recovery_status_label.clear()
+        self._set_label_role(
+            self.recovery_status_label,
+            "secondary",
+        )
         self.initialize_package_button.hide()
         self._set_artifact_action_state(
             can_import=False,
@@ -1231,8 +1447,13 @@ class PackageWorkspacePanel(SectionPanel):
     def _show_no_selection(
             self,
             message: str | None = None,
+            *,
+            title: str = "No Package Selected",
     ) -> None:
         self._clear_selected_package_presentation()
+        self.no_selection_title_label.setText(
+            title
+        )
         self.no_selection_label.setText(
             message
             or (
