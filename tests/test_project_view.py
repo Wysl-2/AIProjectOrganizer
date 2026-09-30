@@ -121,6 +121,9 @@ class ProjectViewTests(unittest.TestCase):
             ),
             "toolbar",
         )
+        self.assertFalse(
+            view.project_refresh_button.icon().isNull()
+        )
         self.assertEqual(
             view.features_panel.title_label.text(),
             "FEATURES",
@@ -135,6 +138,9 @@ class ProjectViewTests(unittest.TestCase):
             ),
             "toolbar",
         )
+        self.assertFalse(
+            view.add_feature_button.icon().isNull()
+        )
         self.assertEqual(
             view.feature_title_label.property(
                 "role"
@@ -147,11 +153,17 @@ class ProjectViewTests(unittest.TestCase):
             ),
             "toolbar",
         )
+        self.assertFalse(
+            view.back_to_features_button.icon().isNull()
+        )
         self.assertEqual(
             view.feature_refresh_button.property(
                 "role"
             ),
             "toolbar",
+        )
+        self.assertFalse(
+            view.feature_refresh_button.icon().isNull()
         )
 
     def test_project_page_lists_documents_and_features(self) -> None:

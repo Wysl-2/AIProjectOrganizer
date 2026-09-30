@@ -111,6 +111,9 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             ),
             "toolbar",
         )
+        self.assertFalse(
+            panel.add_package_button.icon().isNull()
+        )
         self.assertEqual(
             panel.status_label.property(
                 "role"
@@ -128,6 +131,49 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                 1
             ),
             panel.details_stack,
+        )
+        self.assertEqual(
+            panel.artifact_panel.title_label.text(),
+            "IMPLEMENTATION PACKAGE",
+        )
+        self.assertEqual(
+            panel.archive_status_label.property(
+                "role"
+            ),
+            "secondary",
+        )
+        self.assertEqual(
+            panel.extracted_status_label.property(
+                "role"
+            ),
+            "secondary",
+        )
+        self.assertEqual(
+            panel.artifact_error_label.property(
+                "role"
+            ),
+            "error",
+        )
+        self.assertFalse(
+            panel.import_package_button.icon().isNull()
+        )
+        self.assertTrue(
+            panel.extract_package_button.icon().isNull()
+        )
+        self.assertFalse(
+            panel.inspect_package_button.icon().isNull()
+        )
+        self.assertFalse(
+            panel.install_package_button.icon().isNull()
+        )
+        self.assertEqual(
+            panel.open_contents_button.property(
+                "role"
+            ),
+            "toolbar",
+        )
+        self.assertFalse(
+            panel.open_contents_button.icon().isNull()
         )
 
     @staticmethod

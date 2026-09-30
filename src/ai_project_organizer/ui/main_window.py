@@ -206,6 +206,10 @@ class MainWindow(QMainWindow):
         )
 
         self.workspace_navigation_tabs = QTabWidget()
+        self.workspace_navigation_tabs.setProperty(
+            "role",
+            "workspaceNavigation",
+        )
         self.workspace_navigation_tabs.addTab(
             self.project_view,
             "Project",

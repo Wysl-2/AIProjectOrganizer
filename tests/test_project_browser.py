@@ -55,6 +55,28 @@ class ProjectBrowserIntegrationTests(unittest.TestCase):
             self.window.welcome_page,
         )
 
+    def test_workspace_navigation_uses_semantic_role(self) -> None:
+        self.assertEqual(
+            self.window.workspace_navigation_tabs.property(
+                "role"
+            ),
+            "workspaceNavigation",
+        )
+        self.assertEqual(
+            [
+                self.window.workspace_navigation_tabs.tabText(
+                    index
+                )
+                for index in range(
+                    self.window.workspace_navigation_tabs.count()
+                )
+            ],
+            [
+                "Project",
+                "Files",
+            ],
+        )
+
     def test_set_workspace_root_changes_session_without_registry_write(self) -> None:
         workspace = self.root / "workspace"
         workspace.mkdir()

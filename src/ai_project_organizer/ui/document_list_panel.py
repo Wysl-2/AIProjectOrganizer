@@ -9,6 +9,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ai_project_organizer.ui.resources import (
+    load_icon,
+)
 from ai_project_organizer.ui.section_panel import (
     SectionPanel,
 )
@@ -53,6 +56,11 @@ class DocumentListPanel(SectionPanel):
         self.new_document_button.setProperty(
             "role",
             "toolbar",
+        )
+        self.new_document_button.setIcon(
+            load_icon(
+                "add-rounded.svg"
+            )
         )
         self.new_document_button.clicked.connect(
             self._request_new_document

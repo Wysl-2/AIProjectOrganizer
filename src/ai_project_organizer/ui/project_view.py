@@ -24,6 +24,9 @@ from ai_project_organizer.ui.implementation_package_drop_list import (
 from ai_project_organizer.ui.package_workspace_panel import (
     PackageWorkspacePanel,
 )
+from ai_project_organizer.ui.resources import (
+    load_icon,
+)
 from ai_project_organizer.ui.section_panel import (
     SectionPanel,
 )
@@ -184,6 +187,11 @@ class ProjectView(QWidget):
             "role",
             "toolbar",
         )
+        self.project_refresh_button.setIcon(
+            load_icon(
+                "refresh-rounded.svg"
+            )
+        )
         self.project_refresh_button.clicked.connect(
             self.refresh
         )
@@ -261,6 +269,11 @@ class ProjectView(QWidget):
             "role",
             "toolbar",
         )
+        self.add_feature_button.setIcon(
+            load_icon(
+                "add-rounded.svg"
+            )
+        )
         self.add_feature_button.clicked.connect(
             lambda: self.add_feature_requested.emit()
         )
@@ -335,6 +348,11 @@ class ProjectView(QWidget):
             "role",
             "toolbar",
         )
+        self.back_to_features_button.setIcon(
+            load_icon(
+                "go-back.svg"
+            )
+        )
         self.back_to_features_button.clicked.connect(
             self._return_to_project_page
         )
@@ -354,6 +372,11 @@ class ProjectView(QWidget):
         self.feature_refresh_button.setProperty(
             "role",
             "toolbar",
+        )
+        self.feature_refresh_button.setIcon(
+            load_icon(
+                "refresh-rounded.svg"
+            )
         )
         self.feature_refresh_button.clicked.connect(
             self.refresh

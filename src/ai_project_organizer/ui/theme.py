@@ -101,6 +101,36 @@ QTabBar::tab:selected {{
     border-top: 2px solid {ACCENT_COLOR};
 }}
 
+QTabWidget[role="workspaceNavigation"]::pane {{
+    background-color: {BACKGROUND_COLOR};
+    border: none;
+}}
+
+QTabWidget[role="workspaceNavigation"] QTabBar::tab {{
+    background: transparent;
+    color: {SECONDARY_TEXT_COLOR};
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 6px 10px;
+    margin-right: 2px;
+}}
+
+QTabWidget[role="workspaceNavigation"] QTabBar::tab:hover {{
+    background-color: {HOVER_COLOR};
+    color: {PRIMARY_TEXT_COLOR};
+}}
+
+QTabWidget[role="workspaceNavigation"] QTabBar::tab:selected {{
+    background: transparent;
+    color: {PRIMARY_TEXT_COLOR};
+    border-bottom: 2px solid {ACCENT_COLOR};
+}}
+
+QTabWidget[role="workspaceNavigation"] QTabBar::tab:disabled {{
+    background: transparent;
+    color: {DISABLED_TEXT_COLOR};
+}}
+
 QAbstractItemView {{
     background-color: {INPUT_BACKGROUND_COLOR};
     color: {PRIMARY_TEXT_COLOR};
@@ -288,6 +318,10 @@ QLabel[role="sectionTitle"] {{
 
 QLabel[role="secondary"] {{
     color: {SECONDARY_TEXT_COLOR};
+}}
+
+QLabel[role="error"] {{
+    color: {ERROR_COLOR};
 }}
 
 QLabel[role="metadataLabel"] {{

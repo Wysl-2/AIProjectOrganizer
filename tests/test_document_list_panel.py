@@ -48,6 +48,9 @@ class DocumentListPanelTests(unittest.TestCase):
             ),
             "toolbar",
         )
+        self.assertFalse(
+            panel.new_document_button.icon().isNull()
+        )
         self.assertEqual(
             panel.status_label.property(
                 "role"

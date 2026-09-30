@@ -5,7 +5,6 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidgetItem,
@@ -26,6 +25,9 @@ from ai_project_organizer.ui.document_list_panel import (
 )
 from ai_project_organizer.ui.implementation_package_drop_list import (
     ImplementationPackageDropListWidget,
+)
+from ai_project_organizer.ui.resources import (
+    load_icon,
 )
 from ai_project_organizer.ui.section_panel import (
     SectionPanel,
@@ -135,6 +137,11 @@ class PackageWorkspacePanel(SectionPanel):
         self.add_package_button.setProperty(
             "role",
             "toolbar",
+        )
+        self.add_package_button.setIcon(
+            load_icon(
+                "add-rounded.svg"
+            )
         )
         self.add_package_button.clicked.connect(
             self._request_add_package
@@ -257,36 +264,53 @@ class PackageWorkspacePanel(SectionPanel):
             self.new_document_requested.emit
         )
 
-        self.artifact_group = QGroupBox(
-            "Implementation Package",
+        self.artifact_panel = SectionPanel(
+            "IMPLEMENTATION PACKAGE",
             page,
         )
 
         self.archive_status_label = QLabel(
-            self.artifact_group
+            self.artifact_panel
         )
         self.archive_status_label.setWordWrap(
             True
         )
+        self.archive_status_label.setProperty(
+            "role",
+            "secondary",
+        )
 
         self.extracted_status_label = QLabel(
-            self.artifact_group
+            self.artifact_panel
         )
         self.extracted_status_label.setWordWrap(
             True
         )
+        self.extracted_status_label.setProperty(
+            "role",
+            "secondary",
+        )
 
         self.artifact_error_label = QLabel(
-            self.artifact_group
+            self.artifact_panel
         )
         self.artifact_error_label.setWordWrap(
             True
+        )
+        self.artifact_error_label.setProperty(
+            "role",
+            "error",
         )
         self.artifact_error_label.hide()
 
         self.import_package_button = QPushButton(
             "Import ZIP",
-            self.artifact_group,
+            self.artifact_panel,
+        )
+        self.import_package_button.setIcon(
+            load_icon(
+                "import.svg"
+            )
         )
         self.import_package_button.clicked.connect(
             self._request_package_import
@@ -294,7 +318,7 @@ class PackageWorkspacePanel(SectionPanel):
 
         self.extract_package_button = QPushButton(
             "Extract",
-            self.artifact_group,
+            self.artifact_panel,
         )
         self.extract_package_button.clicked.connect(
             self._request_package_extraction
@@ -302,7 +326,12 @@ class PackageWorkspacePanel(SectionPanel):
 
         self.inspect_package_button = QPushButton(
             "Inspect",
-            self.artifact_group,
+            self.artifact_panel,
+        )
+        self.inspect_package_button.setIcon(
+            load_icon(
+                "inspect.svg"
+            )
         )
         self.inspect_package_button.clicked.connect(
             self._request_package_inspection
@@ -310,7 +339,12 @@ class PackageWorkspacePanel(SectionPanel):
 
         self.install_package_button = QPushButton(
             "Install",
-            self.artifact_group,
+            self.artifact_panel,
+        )
+        self.install_package_button.setIcon(
+            load_icon(
+                "install-line.svg"
+            )
         )
         self.install_package_button.clicked.connect(
             self._request_package_installation
@@ -318,7 +352,16 @@ class PackageWorkspacePanel(SectionPanel):
 
         self.open_contents_button = QPushButton(
             "Open Contents",
-            self.artifact_group,
+            self.artifact_panel,
+        )
+        self.open_contents_button.setProperty(
+            "role",
+            "toolbar",
+        )
+        self.open_contents_button.setIcon(
+            load_icon(
+                "folder.svg"
+            )
         )
         self.open_contents_button.clicked.connect(
             self._open_selected_package_contents
@@ -346,22 +389,19 @@ class PackageWorkspacePanel(SectionPanel):
             1
         )
 
-        artifact_layout = QVBoxLayout(
-            self.artifact_group
-        )
-        artifact_layout.addWidget(
+        self.artifact_panel.content_layout.addWidget(
             self.archive_status_label
         )
-        artifact_layout.addWidget(
+        self.artifact_panel.content_layout.addWidget(
             self.extracted_status_label
         )
-        artifact_layout.addWidget(
+        self.artifact_panel.content_layout.addWidget(
             self.artifact_error_label
         )
-        artifact_layout.addLayout(
+        self.artifact_panel.content_layout.addLayout(
             primary_actions
         )
-        artifact_layout.addLayout(
+        self.artifact_panel.content_layout.addLayout(
             secondary_actions
         )
 
@@ -376,7 +416,7 @@ class PackageWorkspacePanel(SectionPanel):
             1,
         )
         layout.addWidget(
-            self.artifact_group
+            self.artifact_panel
         )
 
         return page
