@@ -17,3 +17,6 @@ ai-project-organizer = "ai_project_organizer.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+ai_project_organizer = ["resources/icons/*.svg"]
