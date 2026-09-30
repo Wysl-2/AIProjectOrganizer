@@ -72,7 +72,7 @@ class FileTreeView(QTreeView):
             QAbstractItemView.DragDropMode.DragDrop
         )
         self.setDefaultDropAction(
-            Qt.DropAction.MoveAction
+            Qt.DropAction.CopyAction
         )
 
     def set_workspace_path(self, path: str | None) -> None:

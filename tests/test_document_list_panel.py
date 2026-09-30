@@ -8,7 +8,11 @@ os.environ.setdefault(
     "offscreen",
 )
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+)
 
 from ai_project_organizer.ui.document_list_panel import (
     DocumentListPanel,
@@ -30,6 +34,37 @@ class DocumentListPanelTests(unittest.TestCase):
                 panel.list_widget.count()
             )
         ]
+
+    @staticmethod
+    def _item_for_text(
+            panel: DocumentListPanel,
+            text: str,
+    ):
+        for index in range(
+            panel.list_widget.count()
+        ):
+            item = panel.list_widget.item(
+                index
+            )
+
+            if item.text() == text:
+                return item
+
+        return None
+
+    @staticmethod
+    def _create_symlink(
+            link: Path,
+            target: Path,
+    ) -> None:
+        try:
+            link.symlink_to(
+                target
+            )
+        except (OSError, NotImplementedError) as error:
+            raise unittest.SkipTest(
+                f"Symbolic links are unavailable: {error}"
+            )
 
     def test_section_presentation_uses_compact_header_action(self) -> None:
         panel = DocumentListPanel()
@@ -56,6 +91,24 @@ class DocumentListPanelTests(unittest.TestCase):
                 "role"
             ),
             "secondary",
+        )
+
+    def test_list_is_copy_only_drag_source(self) -> None:
+        panel = DocumentListPanel()
+
+        self.assertTrue(
+            panel.list_widget.dragEnabled()
+        )
+        self.assertFalse(
+            panel.list_widget.acceptDrops()
+        )
+        self.assertEqual(
+            panel.list_widget.dragDropMode(),
+            QAbstractItemView.DragDropMode.DragOnly,
+        )
+        self.assertEqual(
+            panel.list_widget.defaultDropAction(),
+            Qt.DropAction.CopyAction,
         )
 
     def test_directory_is_listed_without_recursive_expansion(self) -> None:
@@ -93,6 +146,131 @@ class DocumentListPanelTests(unittest.TestCase):
             )
             self.assertTrue(
                 panel.status_label.isHidden()
+            )
+
+    def test_regular_file_is_drag_enabled_and_directory_is_not(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+            (documents / "Folder").mkdir()
+            (documents / "note.txt").write_text(
+                "text",
+                encoding="utf-8",
+            )
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+
+            folder_item = self._item_for_text(
+                panel,
+                "Folder",
+            )
+            file_item = self._item_for_text(
+                panel,
+                "note.txt",
+            )
+
+            self.assertIsNotNone(folder_item)
+            self.assertIsNotNone(file_item)
+            self.assertFalse(
+                bool(
+                    folder_item.flags()
+                    & Qt.ItemFlag.ItemIsDragEnabled
+                )
+            )
+            self.assertTrue(
+                bool(
+                    file_item.flags()
+                    & Qt.ItemFlag.ItemIsDragEnabled
+                )
+            )
+
+    def test_symlink_is_not_drag_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+            target = documents / "target.txt"
+            target.write_text(
+                "target",
+                encoding="utf-8",
+            )
+            link = documents / "link.txt"
+            self._create_symlink(
+                link,
+                target,
+            )
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+
+            link_item = self._item_for_text(
+                panel,
+                "link.txt",
+            )
+
+            self.assertIsNotNone(link_item)
+            self.assertFalse(
+                bool(
+                    link_item.flags()
+                    & Qt.ItemFlag.ItemIsDragEnabled
+                )
+            )
+
+    def test_regular_file_mime_data_contains_local_file_url(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+            file_path = documents / "note.txt"
+            file_path.write_text(
+                "text",
+                encoding="utf-8",
+            )
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+
+            item = panel.list_widget.item(0)
+            mime_data = panel.list_widget.mimeData(
+                [item]
+            )
+
+            self.assertIsNotNone(mime_data)
+            self.assertTrue(
+                mime_data.hasUrls()
+            )
+            self.assertEqual(
+                len(
+                    mime_data.urls()
+                ),
+                1,
+            )
+            url = mime_data.urls()[0]
+            self.assertTrue(
+                url.isLocalFile()
+            )
+            self.assertEqual(
+                Path(
+                    url.toLocalFile()
+                ),
+                file_path.absolute(),
+            )
+
+    def test_stale_file_does_not_create_drag_mime_data(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            documents = Path(temporary_directory)
+            file_path = documents / "note.txt"
+            file_path.write_text(
+                "text",
+                encoding="utf-8",
+            )
+
+            panel = DocumentListPanel()
+            panel.set_directory(documents)
+            item = panel.list_widget.item(0)
+
+            file_path.unlink()
+
+            self.assertIsNone(
+                panel.list_widget.mimeData(
+                    [item]
+                )
             )
 
     def test_empty_directory_shows_empty_state_and_allows_new_document(

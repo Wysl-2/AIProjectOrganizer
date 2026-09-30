@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QApplication
 
 from ai_project_organizer.ui.file_tree import FileTreeView
@@ -1117,6 +1117,10 @@ class FileTreePresentationTests(unittest.TestCase):
         self.assertEqual(
             view.indentation(),
             16,
+        )
+        self.assertEqual(
+            view.defaultDropAction(),
+            Qt.DropAction.CopyAction,
         )
 
         view.close()

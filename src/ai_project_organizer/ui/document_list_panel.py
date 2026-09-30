@@ -1,7 +1,9 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QMimeData, Qt, QUrl, Signal
+from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -19,6 +21,86 @@ from ai_project_organizer.ui.section_panel import (
 
 _ENTRY_PATH_ROLE = int(Qt.ItemDataRole.UserRole)
 _ENTRY_REAL_DIRECTORY_ROLE = _ENTRY_PATH_ROLE + 1
+
+
+class _DocumentListWidget(QListWidget):
+    def __init__(
+            self,
+            parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+
+        self.setDragEnabled(True)
+        self.setAcceptDrops(False)
+        self.setDropIndicatorShown(False)
+        self.setDragDropMode(
+            QAbstractItemView.DragDropMode.DragOnly
+        )
+        self.setDefaultDropAction(
+            Qt.DropAction.CopyAction
+        )
+
+    def mimeData(
+            self,
+            items: list[QListWidgetItem],
+    ) -> QMimeData | None:
+        urls: list[QUrl] = []
+
+        for item in items:
+            path_text = item.data(
+                _ENTRY_PATH_ROLE
+            )
+
+            if not path_text:
+                continue
+
+            path = Path(
+                str(path_text)
+            ).expanduser()
+
+            if (
+                    path.is_symlink()
+                    or not path.exists()
+                    or not path.is_file()
+            ):
+                continue
+
+            urls.append(
+                QUrl.fromLocalFile(
+                    str(
+                        path.absolute()
+                    )
+                )
+            )
+
+        if not urls:
+            return None
+
+        mime_data = QMimeData()
+        mime_data.setUrls(
+            urls
+        )
+        return mime_data
+
+    def startDrag(
+            self,
+            _supported_actions,
+    ) -> None:
+        mime_data = self.mimeData(
+            self.selectedItems()
+        )
+
+        if mime_data is None:
+            return
+
+        drag = QDrag(self)
+        drag.setMimeData(
+            mime_data
+        )
+        drag.exec(
+            Qt.DropAction.CopyAction,
+            Qt.DropAction.CopyAction,
+        )
 
 
 class DocumentListPanel(SectionPanel):
@@ -44,7 +126,7 @@ class DocumentListPanel(SectionPanel):
         )
         self.status_label.hide()
 
-        self.list_widget = QListWidget(self)
+        self.list_widget = _DocumentListWidget(self)
         self.list_widget.itemDoubleClicked.connect(
             self._activate_item
         )
@@ -146,6 +228,11 @@ class DocumentListPanel(SectionPanel):
                 entry.is_dir()
                 and not entry.is_symlink()
             )
+            draggable_file = (
+                not entry.is_symlink()
+                and entry.exists()
+                and entry.is_file()
+            )
             item = QListWidgetItem(entry.name)
             item.setData(
                 _ENTRY_PATH_ROLE,
@@ -154,6 +241,17 @@ class DocumentListPanel(SectionPanel):
             item.setData(
                 _ENTRY_REAL_DIRECTORY_ROLE,
                 real_directory,
+            )
+
+            flags = item.flags()
+
+            if draggable_file:
+                flags |= Qt.ItemFlag.ItemIsDragEnabled
+            else:
+                flags &= ~Qt.ItemFlag.ItemIsDragEnabled
+
+            item.setFlags(
+                flags
             )
             self.list_widget.addItem(item)
 
