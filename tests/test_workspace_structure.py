@@ -8,26 +8,44 @@ from ai_project_organizer.workspace_structure import (
     FEATURE_PACKAGES_DIRECTORY_NAME,
     PACKAGE_CONTENTS_DIRECTORY_NAME,
     PACKAGE_DOCUMENTS_DIRECTORY_NAME,
+    PACKAGE_PATCHES_DIRECTORY_NAME,
+    PATCH_CONTENTS_DIRECTORY_NAME,
+    PATCH_DOCUMENTS_DIRECTORY_NAME,
     PROJECT_DOCUMENTS_DIRECTORY_NAME,
     PROJECT_FEATURES_DIRECTORY_NAME,
+    PROJECT_PATCHES_DIRECTORY_NAME,
+    create_package_patch,
     create_project_feature,
     create_project_package,
+    create_project_patch,
     discover_feature_packages,
+    discover_package_patches,
     discover_project_features,
+    discover_project_patches,
     feature_documents_path,
     feature_packages_path,
+    initialize_package_patch_structure,
     initialize_project_feature_structure,
     initialize_project_package_structure,
+    initialize_project_patch_structure,
     initialize_project_workspace_structure,
+    is_package_patch_structure_initialized,
     is_project_package_structure_initialized,
+    is_project_patch_structure_initialized,
     is_project_feature_structure_initialized,
     is_project_workspace_structure_initialized,
     package_contents_path,
     package_documents_path,
+    package_patch_path,
+    package_patches_path,
+    patch_contents_path,
+    patch_documents_path,
     project_documents_path,
     project_feature_path,
     project_features_path,
     project_package_path,
+    project_patch_path,
+    project_patches_path,
 )
 
 
@@ -1385,6 +1403,577 @@ class WorkspaceStructureTests(unittest.TestCase):
                     "Feature",
                     "PKG01",
                 )
+
+    def test_patch_paths_use_standard_patch_children(self) -> None:
+        workspace = (
+            Path(tempfile.gettempdir())
+            / "workspace"
+        )
+        package = project_package_path(
+            workspace,
+            "Feature",
+            "PKG01",
+        )
+        project_patch = project_patch_path(
+            workspace,
+            "General Fix",
+        )
+        package_patch = package_patch_path(
+            package,
+            "PKG01-1",
+        )
+
+        self.assertEqual(
+            project_patches_path(workspace),
+            workspace / PROJECT_PATCHES_DIRECTORY_NAME,
+        )
+        self.assertEqual(
+            project_patch,
+            workspace / "Patches" / "General Fix",
+        )
+        self.assertEqual(
+            package_patches_path(package),
+            package / PACKAGE_PATCHES_DIRECTORY_NAME,
+        )
+        self.assertEqual(
+            package_patch,
+            package / "Patches" / "PKG01-1",
+        )
+        self.assertEqual(
+            patch_documents_path(project_patch),
+            project_patch / PATCH_DOCUMENTS_DIRECTORY_NAME,
+        )
+        self.assertEqual(
+            patch_contents_path(project_patch),
+            project_patch / PATCH_CONTENTS_DIRECTORY_NAME,
+        )
+
+    def test_missing_patch_containers_do_not_change_existing_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_feature(
+                workspace,
+                "Feature",
+            )
+            create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+
+            self.assertTrue(
+                is_project_workspace_structure_initialized(
+                    workspace
+                )
+            )
+            self.assertTrue(
+                is_project_package_structure_initialized(
+                    workspace,
+                    "Feature",
+                    "PKG01",
+                )
+            )
+            self.assertFalse(
+                project_patches_path(
+                    workspace
+                ).exists()
+            )
+            self.assertFalse(
+                package_patches_path(
+                    project_package_path(
+                        workspace,
+                        "Feature",
+                        "PKG01",
+                    )
+                ).exists()
+            )
+
+    def test_missing_patch_containers_discover_as_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_feature(
+                workspace,
+                "Feature",
+            )
+            create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+
+            self.assertEqual(
+                discover_project_patches(
+                    workspace
+                ),
+                (),
+            )
+            self.assertEqual(
+                discover_package_patches(
+                    workspace,
+                    "Feature",
+                    "PKG01",
+                ),
+                (),
+            )
+
+    def test_create_project_patch_builds_complete_standard_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+
+            patch_path = create_project_patch(
+                workspace,
+                "  Theme Fix  ",
+            )
+
+            self.assertEqual(
+                patch_path,
+                workspace / "Patches" / "Theme Fix",
+            )
+            self.assertTrue(
+                (patch_path / "Documents").is_dir()
+            )
+            self.assertTrue(
+                (patch_path / "Contents").is_dir()
+            )
+            self.assertTrue(
+                is_project_patch_structure_initialized(
+                    workspace,
+                    "Theme Fix",
+                )
+            )
+
+    def test_create_package_patch_builds_complete_standard_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_feature(
+                workspace,
+                "Feature",
+            )
+            package = create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+
+            patch_path = create_package_patch(
+                workspace,
+                "Feature",
+                "PKG01",
+                "PKG01-1",
+            )
+
+            self.assertEqual(
+                patch_path,
+                package / "Patches" / "PKG01-1",
+            )
+            self.assertTrue(
+                (patch_path / "Documents").is_dir()
+            )
+            self.assertTrue(
+                (patch_path / "Contents").is_dir()
+            )
+            self.assertTrue(
+                (package / "Documents").is_dir()
+            )
+            self.assertTrue(
+                (package / "Contents").is_dir()
+            )
+            self.assertTrue(
+                is_package_patch_structure_initialized(
+                    workspace,
+                    "Feature",
+                    "PKG01",
+                    "PKG01-1",
+                )
+            )
+
+    def test_patch_identifiers_reuse_structured_name_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+
+            for patch_id in (
+                "",
+                "   ",
+                ".",
+                "..",
+                "Patch/01",
+                "Patch\\01",
+            ):
+                with self.subTest(patch_id=patch_id):
+                    with self.assertRaises(ValueError):
+                        create_project_patch(
+                            workspace,
+                            patch_id,
+                        )
+
+            with self.assertRaises(ValueError):
+                create_project_patch(
+                    workspace,
+                    123,  # type: ignore[arg-type]
+                )
+
+    def test_existing_project_patch_is_not_merged_or_replaced(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            patches_root = workspace / "Patches"
+            patches_root.mkdir()
+            patch_path = patches_root / "Existing"
+            patch_path.mkdir()
+            marker = patch_path / "marker.txt"
+            marker.write_text(
+                "preserve",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(FileExistsError):
+                create_project_patch(
+                    workspace,
+                    "Existing",
+                )
+
+            self.assertEqual(
+                marker.read_text(encoding="utf-8"),
+                "preserve",
+            )
+            self.assertFalse(
+                (patch_path / "Documents").exists()
+            )
+
+    def test_project_patch_container_conflicts_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            patches_root = workspace / "Patches"
+            patches_root.write_text(
+                "preserve",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(NotADirectoryError):
+                discover_project_patches(
+                    workspace
+                )
+
+            with self.assertRaises(NotADirectoryError):
+                create_project_patch(
+                    workspace,
+                    "Fix",
+                )
+
+            self.assertEqual(
+                patches_root.read_text(encoding="utf-8"),
+                "preserve",
+            )
+
+    def test_package_patch_container_symlink_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_feature(
+                workspace,
+                "Feature",
+            )
+            package = create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+            outside = root / "outside"
+            outside.mkdir()
+            patches_root = package / "Patches"
+            self._symlink(
+                patches_root,
+                outside,
+                target_is_directory=True,
+            )
+
+            with self.assertRaises(NotADirectoryError):
+                discover_package_patches(
+                    workspace,
+                    "Feature",
+                    "PKG01",
+                )
+
+            with self.assertRaises(NotADirectoryError):
+                create_package_patch(
+                    workspace,
+                    "Feature",
+                    "PKG01",
+                    "PKG01-1",
+                )
+
+            self.assertEqual(
+                list(outside.iterdir()),
+                [],
+            )
+
+    def test_patch_discovery_returns_real_directories_in_deterministic_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            patches_root = workspace / "Patches"
+            patches_root.mkdir()
+            alpha = patches_root / "Alpha"
+            beta = patches_root / "beta"
+            gamma = patches_root / "gamma"
+            for path in (
+                gamma,
+                beta,
+                alpha,
+            ):
+                path.mkdir()
+
+            (patches_root / "notes.txt").write_text(
+                "not a patch",
+                encoding="utf-8",
+            )
+            outside = root / "outside"
+            outside.mkdir()
+            linked = patches_root / "External"
+            self._symlink(
+                linked,
+                outside,
+                target_is_directory=True,
+            )
+
+            self.assertEqual(
+                discover_project_patches(
+                    workspace
+                ),
+                (
+                    alpha,
+                    beta,
+                    gamma,
+                ),
+            )
+
+    def test_incomplete_patch_can_be_initialized_without_losing_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            patches_root = workspace / "Patches"
+            patches_root.mkdir()
+            patch_path = patches_root / "Fix"
+            patch_path.mkdir()
+            documents = patch_path / "Documents"
+            documents.mkdir()
+            marker = documents / "notes.txt"
+            marker.write_text(
+                "preserve",
+                encoding="utf-8",
+            )
+
+            self.assertFalse(
+                is_project_patch_structure_initialized(
+                    workspace,
+                    "Fix",
+                )
+            )
+
+            initialize_project_patch_structure(
+                workspace,
+                "Fix",
+            )
+
+            self.assertTrue(
+                is_project_patch_structure_initialized(
+                    workspace,
+                    "Fix",
+                )
+            )
+            self.assertEqual(
+                marker.read_text(encoding="utf-8"),
+                "preserve",
+            )
+
+    def test_patch_initialization_preflights_children_before_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            patches_root = workspace / "Patches"
+            patches_root.mkdir()
+            patch_path = patches_root / "Fix"
+            patch_path.mkdir()
+            contents = patch_path / "Contents"
+            contents.write_text(
+                "preserve",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(NotADirectoryError):
+                initialize_project_patch_structure(
+                    workspace,
+                    "Fix",
+                )
+
+            self.assertFalse(
+                (patch_path / "Documents").exists()
+            )
+            self.assertEqual(
+                contents.read_text(encoding="utf-8"),
+                "preserve",
+            )
+
+    def test_same_patch_id_can_exist_under_different_packages(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_feature(
+                workspace,
+                "Feature",
+            )
+            first = create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+            second = create_project_package(
+                workspace,
+                "Feature",
+                "PKG02",
+            )
+
+            first_patch = create_package_patch(
+                workspace,
+                "Feature",
+                "PKG01",
+                "FollowUp",
+            )
+            second_patch = create_package_patch(
+                workspace,
+                "Feature",
+                "PKG02",
+                "FollowUp",
+            )
+
+            self.assertEqual(
+                first_patch,
+                first / "Patches" / "FollowUp",
+            )
+            self.assertEqual(
+                second_patch,
+                second / "Patches" / "FollowUp",
+            )
+
+    def test_failed_first_patch_creation_removes_new_optional_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            real_mkdir = Path.mkdir
+
+            def controlled_mkdir(
+                    path: Path,
+                    *args,
+                    **kwargs,
+            ) -> None:
+                if path.name == "Contents":
+                    raise PermissionError(
+                        "permission denied"
+                    )
+
+                real_mkdir(
+                    path,
+                    *args,
+                    **kwargs,
+                )
+
+            with patch(
+                "ai_project_organizer.workspace_structure.Path.mkdir",
+                new=controlled_mkdir,
+            ):
+                with self.assertRaises(PermissionError):
+                    create_project_patch(
+                        workspace,
+                        "Broken",
+                    )
+
+            self.assertFalse(
+                (workspace / "Patches").exists()
+            )
+
+    def test_failed_patch_creation_preserves_existing_optional_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            workspace = self._initialized_workspace(
+                root
+            )
+            patches_root = workspace / "Patches"
+            patches_root.mkdir()
+            marker = patches_root / "marker.txt"
+            marker.write_text(
+                "preserve",
+                encoding="utf-8",
+            )
+            real_mkdir = Path.mkdir
+
+            def controlled_mkdir(
+                    path: Path,
+                    *args,
+                    **kwargs,
+            ) -> None:
+                if path.name == "Contents":
+                    raise PermissionError(
+                        "permission denied"
+                    )
+
+                real_mkdir(
+                    path,
+                    *args,
+                    **kwargs,
+                )
+
+            with patch(
+                "ai_project_organizer.workspace_structure.Path.mkdir",
+                new=controlled_mkdir,
+            ):
+                with self.assertRaises(PermissionError):
+                    create_project_patch(
+                        workspace,
+                        "Broken",
+                    )
+
+            self.assertTrue(
+                patches_root.is_dir()
+            )
+            self.assertEqual(
+                marker.read_text(encoding="utf-8"),
+                "preserve",
+            )
+            self.assertFalse(
+                (patches_root / "Broken").exists()
+            )
 
 
 if __name__ == "__main__":

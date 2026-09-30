@@ -3,10 +3,14 @@ from pathlib import Path
 
 PROJECT_DOCUMENTS_DIRECTORY_NAME = "Documents"
 PROJECT_FEATURES_DIRECTORY_NAME = "Features"
+PROJECT_PATCHES_DIRECTORY_NAME = "Patches"
 FEATURE_DOCUMENTS_DIRECTORY_NAME = "Documents"
 FEATURE_PACKAGES_DIRECTORY_NAME = "Packages"
 PACKAGE_DOCUMENTS_DIRECTORY_NAME = "Documents"
 PACKAGE_CONTENTS_DIRECTORY_NAME = "Contents"
+PACKAGE_PATCHES_DIRECTORY_NAME = "Patches"
+PATCH_DOCUMENTS_DIRECTORY_NAME = "Documents"
+PATCH_CONTENTS_DIRECTORY_NAME = "Contents"
 
 
 def project_documents_path(
@@ -27,6 +31,15 @@ def project_features_path(
     )
 
 
+def project_patches_path(
+    workspace_path: str | Path,
+) -> Path:
+    return (
+        Path(workspace_path).expanduser()
+        / PROJECT_PATCHES_DIRECTORY_NAME
+    )
+
+
 def project_feature_path(
     workspace_path: str | Path,
     feature_name: str,
@@ -34,6 +47,16 @@ def project_feature_path(
     return (
         project_features_path(workspace_path)
         / _validated_feature_name(feature_name)
+    )
+
+
+def project_patch_path(
+    workspace_path: str | Path,
+    patch_id: str,
+) -> Path:
+    return (
+        project_patches_path(workspace_path)
+        / _validated_patch_id(patch_id)
     )
 
 
@@ -86,6 +109,43 @@ def package_contents_path(
     return (
         Path(package_path).expanduser()
         / PACKAGE_CONTENTS_DIRECTORY_NAME
+    )
+
+
+def package_patches_path(
+    package_path: str | Path,
+) -> Path:
+    return (
+        Path(package_path).expanduser()
+        / PACKAGE_PATCHES_DIRECTORY_NAME
+    )
+
+
+def package_patch_path(
+    package_path: str | Path,
+    patch_id: str,
+) -> Path:
+    return (
+        package_patches_path(package_path)
+        / _validated_patch_id(patch_id)
+    )
+
+
+def patch_documents_path(
+    patch_path: str | Path,
+) -> Path:
+    return (
+        Path(patch_path).expanduser()
+        / PATCH_DOCUMENTS_DIRECTORY_NAME
+    )
+
+
+def patch_contents_path(
+    patch_path: str | Path,
+) -> Path:
+    return (
+        Path(patch_path).expanduser()
+        / PATCH_CONTENTS_DIRECTORY_NAME
     )
 
 
@@ -154,6 +214,81 @@ def is_project_package_structure_initialized(
     )
 
 
+def is_project_patch_structure_initialized(
+    workspace_path: str | Path,
+    patch_id: str,
+) -> bool:
+    workspace = _validated_workspace(
+        workspace_path
+    )
+    patches_root = project_patches_path(
+        workspace
+    )
+
+    _require_real_directory(
+        patches_root,
+        "Project Patches directory",
+    )
+
+    patch = (
+        patches_root
+        / _validated_patch_id(patch_id)
+    )
+
+    _require_real_directory(
+        patch,
+        "Patch directory",
+    )
+
+    return _are_standard_directories_initialized(
+        (
+            patch_documents_path(patch),
+            patch_contents_path(patch),
+        )
+    )
+
+
+def is_package_patch_structure_initialized(
+    workspace_path: str | Path,
+    feature_name: str,
+    package_id: str,
+    patch_id: str,
+) -> bool:
+    workspace = _validated_workspace(
+        workspace_path
+    )
+    package = _validated_project_package(
+        workspace,
+        feature_name,
+        package_id,
+    )
+    patches_root = package_patches_path(
+        package
+    )
+
+    _require_real_directory(
+        patches_root,
+        "Package Patches directory",
+    )
+
+    patch = (
+        patches_root
+        / _validated_patch_id(patch_id)
+    )
+
+    _require_real_directory(
+        patch,
+        "Patch directory",
+    )
+
+    return _are_standard_directories_initialized(
+        (
+            patch_documents_path(patch),
+            patch_contents_path(patch),
+        )
+    )
+
+
 def initialize_project_workspace_structure(
     workspace_path: str | Path,
 ) -> None:
@@ -215,6 +350,81 @@ def initialize_project_package_structure(
         (
             package_documents_path(package),
             package_contents_path(package),
+        )
+    )
+
+
+def initialize_project_patch_structure(
+    workspace_path: str | Path,
+    patch_id: str,
+) -> None:
+    workspace = _validated_workspace(
+        workspace_path
+    )
+    patches_root = project_patches_path(
+        workspace
+    )
+
+    _require_real_directory(
+        patches_root,
+        "Project Patches directory",
+    )
+
+    patch = (
+        patches_root
+        / _validated_patch_id(patch_id)
+    )
+
+    _require_real_directory(
+        patch,
+        "Patch directory",
+    )
+
+    _initialize_standard_directories(
+        (
+            patch_documents_path(patch),
+            patch_contents_path(patch),
+        )
+    )
+
+
+def initialize_package_patch_structure(
+    workspace_path: str | Path,
+    feature_name: str,
+    package_id: str,
+    patch_id: str,
+) -> None:
+    workspace = _validated_workspace(
+        workspace_path
+    )
+    package = _validated_project_package(
+        workspace,
+        feature_name,
+        package_id,
+    )
+    patches_root = package_patches_path(
+        package
+    )
+
+    _require_real_directory(
+        patches_root,
+        "Package Patches directory",
+    )
+
+    patch = (
+        patches_root
+        / _validated_patch_id(patch_id)
+    )
+
+    _require_real_directory(
+        patch,
+        "Patch directory",
+    )
+
+    _initialize_standard_directories(
+        (
+            patch_documents_path(patch),
+            patch_contents_path(patch),
         )
     )
 
@@ -299,6 +509,55 @@ def create_project_package(
     return package
 
 
+def create_project_patch(
+    workspace_path: str | Path,
+    patch_id: str,
+) -> Path:
+    workspace = _validated_workspace(
+        workspace_path
+    )
+    normalized_patch_id = _validated_patch_id(
+        patch_id
+    )
+    patches_root = project_patches_path(
+        workspace
+    )
+
+    return _create_patch(
+        patches_root,
+        normalized_patch_id,
+        root_description="Project Patches directory",
+    )
+
+
+def create_package_patch(
+    workspace_path: str | Path,
+    feature_name: str,
+    package_id: str,
+    patch_id: str,
+) -> Path:
+    workspace = _validated_workspace(
+        workspace_path
+    )
+    package = _validated_project_package(
+        workspace,
+        feature_name,
+        package_id,
+    )
+    normalized_patch_id = _validated_patch_id(
+        patch_id
+    )
+    patches_root = package_patches_path(
+        package
+    )
+
+    return _create_patch(
+        patches_root,
+        normalized_patch_id,
+        root_description="Package Patches directory",
+    )
+
+
 def discover_project_features(
     workspace_path: str | Path,
 ) -> tuple[Path, ...]:
@@ -328,6 +587,55 @@ def discover_feature_packages(
 
     return _discover_real_directories(
         packages_root
+    )
+
+
+def discover_project_patches(
+    workspace_path: str | Path,
+) -> tuple[Path, ...]:
+    workspace = _validated_workspace(
+        workspace_path
+    )
+    patches_root = project_patches_path(
+        workspace
+    )
+
+    if not _optional_real_directory_available(
+        patches_root,
+        "Project Patches directory",
+    ):
+        return ()
+
+    return _discover_real_directories(
+        patches_root
+    )
+
+
+def discover_package_patches(
+    workspace_path: str | Path,
+    feature_name: str,
+    package_id: str,
+) -> tuple[Path, ...]:
+    workspace = _validated_workspace(
+        workspace_path
+    )
+    package = _validated_project_package(
+        workspace,
+        feature_name,
+        package_id,
+    )
+    patches_root = package_patches_path(
+        package
+    )
+
+    if not _optional_real_directory_available(
+        patches_root,
+        "Package Patches directory",
+    ):
+        return ()
+
+    return _discover_real_directories(
+        patches_root
     )
 
 
@@ -406,6 +714,28 @@ def _validated_feature_packages_root(
     return packages_root
 
 
+def _validated_project_package(
+    workspace: Path,
+    feature_name: str,
+    package_id: str,
+) -> Path:
+    packages_root = _validated_feature_packages_root(
+        workspace,
+        feature_name,
+    )
+    package = (
+        packages_root
+        / _validated_package_id(package_id)
+    )
+
+    _require_real_directory(
+        package,
+        "Package directory",
+    )
+
+    return package
+
+
 def _require_real_directory(
     path: Path,
     description: str,
@@ -426,6 +756,26 @@ def _require_real_directory(
         )
 
 
+def _optional_real_directory_available(
+    path: Path,
+    description: str,
+) -> bool:
+    if path.is_symlink():
+        raise NotADirectoryError(
+            f"{description} must not be a symbolic link: {path}"
+        )
+
+    if not path.exists():
+        return False
+
+    if not path.is_dir():
+        raise NotADirectoryError(
+            f"{description} is not a directory: {path}"
+        )
+
+    return True
+
+
 def _validated_feature_name(
     value: object,
 ) -> str:
@@ -441,6 +791,15 @@ def _validated_package_id(
     return _validated_structured_directory_name(
         value,
         label="Package ID",
+    )
+
+
+def _validated_patch_id(
+    value: object,
+) -> str:
+    return _validated_structured_directory_name(
+        value,
+        label="Patch ID",
     )
 
 
@@ -472,6 +831,71 @@ def _validated_structured_directory_name(
         )
 
     return normalized
+
+
+def _create_patch(
+    patches_root: Path,
+    patch_id: str,
+    *,
+    root_description: str,
+) -> Path:
+    root_created = False
+    patch_created = False
+    patch = patches_root / patch_id
+
+    if patches_root.is_symlink():
+        raise NotADirectoryError(
+            f"{root_description} must not be a symbolic link: "
+            f"{patches_root}"
+        )
+
+    if patches_root.exists():
+        if not patches_root.is_dir():
+            raise NotADirectoryError(
+                f"{root_description} is not a directory: "
+                f"{patches_root}"
+            )
+
+        if patch.exists() or patch.is_symlink():
+            raise FileExistsError(
+                f"Patch already exists: {patch}"
+            )
+
+    try:
+        if not patches_root.exists():
+            patches_root.mkdir()
+            root_created = True
+
+        if patch.exists() or patch.is_symlink():
+            raise FileExistsError(
+                f"Patch already exists: {patch}"
+            )
+
+        patch.mkdir()
+        patch_created = True
+
+        _initialize_standard_directories(
+            (
+                patch_documents_path(patch),
+                patch_contents_path(patch),
+            )
+        )
+    except OSError:
+        if patch_created:
+            try:
+                patch.rmdir()
+            except OSError:
+                pass
+
+        if root_created:
+            try:
+                patches_root.rmdir()
+            except OSError:
+                pass
+
+        raise
+
+    return patch
 
 
 def _are_standard_directories_initialized(
