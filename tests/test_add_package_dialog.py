@@ -89,6 +89,12 @@ class AddPackageDialogTests(unittest.TestCase):
             create_button.text(),
             "Create",
         )
+        self.assertEqual(
+            create_button.property(
+                "role"
+            ),
+            "primary",
+        )
 
 
     def test_selected_feature_name_is_preselected(self) -> None:

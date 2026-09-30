@@ -5,6 +5,7 @@ from PySide6.QtGui import QCloseEvent, QTextCursor
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QGridLayout,
     QLabel,
     QPlainTextEdit,
     QVBoxLayout,
@@ -13,6 +14,9 @@ from PySide6.QtWidgets import (
 
 from ai_project_organizer.implementation_package import (
     ExtractedImplementationPackage,
+)
+from ai_project_organizer.ui.section_panel import (
+    SectionPanel,
 )
 
 
@@ -47,41 +51,117 @@ class PackageInstallDialog(QDialog):
             560,
         )
 
-        package_label = QLabel(
-            f"Package: {package_id}",
+        self.package_title_label = QLabel(
+            package_id,
             self,
         )
-        installer_label = QLabel(
-            (
-                "Installer: "
-                f"{extracted_package.install_script_path}"
-            ),
+        self.package_title_label.setProperty(
+            "role",
+            "pageTitle",
+        )
+
+        self.installer_metadata_label = QLabel(
+            "Installer",
             self,
         )
-        installer_label.setWordWrap(
-            True
+        self.installer_metadata_label.setProperty(
+            "role",
+            "metadataLabel",
         )
-        target_label = QLabel(
-            (
-                "Target: "
-                f"{self.target_project_path}"
-            ),
+        self.installer_value_label = QLabel(
+            str(extracted_package.install_script_path),
             self,
         )
-        target_label.setWordWrap(
+        self.installer_value_label.setWordWrap(
             True
         )
 
+        self.target_metadata_label = QLabel(
+            "Target",
+            self,
+        )
+        self.target_metadata_label.setProperty(
+            "role",
+            "metadataLabel",
+        )
+        self.target_value_label = QLabel(
+            str(self.target_project_path),
+            self,
+        )
+        self.target_value_label.setWordWrap(
+            True
+        )
+
+        self.status_metadata_label = QLabel(
+            "Status",
+            self,
+        )
+        self.status_metadata_label.setProperty(
+            "role",
+            "metadataLabel",
+        )
         self.status_label = QLabel(
-            "Status: Ready",
+            "Ready",
             self,
         )
+        self.status_label.setProperty(
+            "role",
+            "secondary",
+        )
 
+        metadata_layout = QGridLayout()
+        metadata_layout.setColumnStretch(
+            1,
+            1,
+        )
+        metadata_layout.addWidget(
+            self.installer_metadata_label,
+            0,
+            0,
+        )
+        metadata_layout.addWidget(
+            self.installer_value_label,
+            0,
+            1,
+        )
+        metadata_layout.addWidget(
+            self.target_metadata_label,
+            1,
+            0,
+        )
+        metadata_layout.addWidget(
+            self.target_value_label,
+            1,
+            1,
+        )
+        metadata_layout.addWidget(
+            self.status_metadata_label,
+            2,
+            0,
+        )
+        metadata_layout.addWidget(
+            self.status_label,
+            2,
+            1,
+        )
+
+        self.output_panel = SectionPanel(
+            "INSTALLER OUTPUT",
+            self,
+        )
         self.output_edit = QPlainTextEdit(
-            self
+            self.output_panel
+        )
+        self.output_edit.setProperty(
+            "role",
+            "consoleOutput",
         )
         self.output_edit.setReadOnly(
             True
+        )
+        self.output_panel.content_layout.addWidget(
+            self.output_edit,
+            1,
         )
 
         self.button_box = QDialogButtonBox(
@@ -99,19 +179,13 @@ class PackageInstallDialog(QDialog):
             self
         )
         layout.addWidget(
-            package_label
+            self.package_title_label
+        )
+        layout.addLayout(
+            metadata_layout
         )
         layout.addWidget(
-            installer_label
-        )
-        layout.addWidget(
-            target_label
-        )
-        layout.addWidget(
-            self.status_label
-        )
-        layout.addWidget(
-            self.output_edit,
+            self.output_panel,
             1,
         )
         layout.addWidget(
@@ -141,14 +215,36 @@ class PackageInstallDialog(QDialog):
     def is_running(self) -> bool:
         return self._running
 
+    def _set_status(
+            self,
+            text: str,
+            role: str = "secondary",
+    ) -> None:
+        self.status_label.setText(
+            text
+        )
+        self.status_label.setProperty(
+            "role",
+            role,
+        )
+
+        style = self.status_label.style()
+        style.unpolish(
+            self.status_label
+        )
+        style.polish(
+            self.status_label
+        )
+        self.status_label.update()
+
     def start_installation(self) -> None:
         if self._started:
             return
 
         self._started = True
         self._running = True
-        self.status_label.setText(
-            "Status: Starting installer"
+        self._set_status(
+            "Starting installer"
         )
         self.close_button.setEnabled(
             False
@@ -206,8 +302,8 @@ class PackageInstallDialog(QDialog):
         )
 
     def _process_started(self) -> None:
-        self.status_label.setText(
-            "Status: Running"
+        self._set_status(
+            "Running"
         )
 
     def _read_standard_output(self) -> None:
@@ -277,8 +373,9 @@ class PackageInstallDialog(QDialog):
     ) -> None:
         if error == QProcess.ProcessError.FailedToStart:
             self._running = False
-            self.status_label.setText(
-                "Status: Unable to start installer"
+            self._set_status(
+                "Unable to start installer",
+                "error",
             )
 
             error_text = self.process.errorString()
@@ -311,19 +408,21 @@ class PackageInstallDialog(QDialog):
         self._running = False
 
         if exit_status == QProcess.ExitStatus.CrashExit:
-            self.status_label.setText(
-                "Status: Installer terminated unexpectedly"
+            self._set_status(
+                "Installer terminated unexpectedly",
+                "error",
             )
         elif exit_code == 0:
-            self.status_label.setText(
-                "Status: Installation completed successfully"
+            self._set_status(
+                "Installation completed successfully"
             )
         else:
-            self.status_label.setText(
+            self._set_status(
                 (
-                    "Status: Installation failed with "
+                    "Installation failed with "
                     f"exit code {exit_code}"
-                )
+                ),
+                "error",
             )
 
         self.close_button.setEnabled(

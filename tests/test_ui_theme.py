@@ -65,11 +65,16 @@ class UiThemeTests(unittest.TestCase):
 
     def test_stylesheet_contains_semantic_roles(self) -> None:
         for role in (
+            'role="applicationTitle"',
             'role="pageTitle"',
             'role="sectionTitle"',
             'role="sectionDivider"',
             'role="workspaceNavigation"',
             'role="packageList"',
+            'role="fileTree"',
+            'role="projectList"',
+            'role="documentEditor"',
+            'role="consoleOutput"',
             'role="secondary"',
             'role="error"',
             'role="warning"',
@@ -84,6 +89,12 @@ class UiThemeTests(unittest.TestCase):
                     role,
                     APPLICATION_STYLESHEET,
                 )
+
+    def test_stylesheet_styles_combo_boxes(self) -> None:
+        self.assertIn(
+            "QComboBox",
+            APPLICATION_STYLESHEET,
+        )
 
     def test_stylesheet_contains_accent_color(self) -> None:
         self.assertIn(

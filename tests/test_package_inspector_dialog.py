@@ -103,6 +103,62 @@ class PackageInspectorDialogTests(unittest.TestCase):
             self.assertTrue(
                 dialog.copy_commit_button.isEnabled()
             )
+            self.assertEqual(
+                dialog.package_title_label.text(),
+                "PKG01",
+            )
+            self.assertEqual(
+                dialog.package_title_label.property(
+                    "role"
+                ),
+                "pageTitle",
+            )
+            self.assertEqual(
+                dialog.root_metadata_label.property(
+                    "role"
+                ),
+                "metadataLabel",
+            )
+            self.assertEqual(
+                dialog.state_metadata_label.property(
+                    "role"
+                ),
+                "metadataLabel",
+            )
+            self.assertEqual(
+                dialog.review_panel.title_label.text(),
+                "PACKAGE REVIEW",
+            )
+            self.assertEqual(
+                dialog.open_readme_button.property(
+                    "role"
+                ),
+                "toolbar",
+            )
+            self.assertEqual(
+                dialog.open_contents_button.property(
+                    "role"
+                ),
+                "toolbar",
+            )
+            self.assertFalse(
+                dialog.open_contents_button.icon().isNull()
+            )
+            self.assertEqual(
+                dialog.copy_commit_button.property(
+                    "role"
+                ),
+                "toolbar",
+            )
+            self.assertEqual(
+                dialog.install_button.property(
+                    "role"
+                ),
+                "primary",
+            )
+            self.assertFalse(
+                dialog.install_button.icon().isNull()
+            )
 
     def test_copy_commit_message_uses_exact_parsed_text(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -25,6 +25,38 @@ class WelcomePageTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.page.close()
 
+    def test_page_uses_semantic_presentation(self) -> None:
+        self.assertEqual(
+            self.page.title_label.property(
+                "role"
+            ),
+            "applicationTitle",
+        )
+        self.assertEqual(
+            self.page.projects_label.property(
+                "role"
+            ),
+            "sectionTitle",
+        )
+        self.assertEqual(
+            self.page.empty_label.property(
+                "role"
+            ),
+            "secondary",
+        )
+        self.assertEqual(
+            self.page.project_list.property(
+                "role"
+            ),
+            "projectList",
+        )
+        self.assertEqual(
+            self.page.create_project_button.property(
+                "role"
+            ),
+            "primary",
+        )
+
     def test_empty_state_is_shown_without_projects(self) -> None:
         self.page.set_projects(())
 

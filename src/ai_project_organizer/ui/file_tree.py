@@ -43,6 +43,20 @@ class FileTreeView(QTreeView):
         self.workspace_path: Path | None = None
         self._drop_highlight_path: Path | None = None
 
+        self.setProperty(
+            "role",
+            "fileTree",
+        )
+        self.setHeaderHidden(
+            True
+        )
+        self.setUniformRowHeights(
+            True
+        )
+        self.setIndentation(
+            16
+        )
+
         self.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu
         )

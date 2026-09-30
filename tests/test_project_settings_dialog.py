@@ -5,7 +5,10 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialogButtonBox,
+)
 
 from ai_project_organizer.project import (
     ProjectMetadata,
@@ -32,6 +35,33 @@ class ProjectSettingsDialogTests(unittest.TestCase):
             ),
             github_repository="Wysl-2/WorldMeshes",
         )
+
+    def test_save_button_uses_primary_presentation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            dialog = ProjectSettingsDialog(
+                Path(temporary_directory)
+            )
+            button_box = dialog.findChild(
+                QDialogButtonBox
+            )
+            self.assertIsNotNone(
+                button_box
+            )
+            save_button = button_box.button(
+                QDialogButtonBox.StandardButton.Save
+            )
+
+            self.assertIsNotNone(
+                save_button
+            )
+            self.assertEqual(
+                save_button.property(
+                    "role"
+                ),
+                "primary",
+            )
+
+            dialog.close()
 
     def test_existing_metadata_populates_fields(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

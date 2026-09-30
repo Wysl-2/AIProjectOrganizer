@@ -50,6 +50,10 @@ QMenuBar::item:selected {{
     background-color: {HOVER_COLOR};
 }}
 
+QMenuBar::item:pressed {{
+    background-color: {SELECTION_COLOR};
+}}
+
 QMenu {{
     background-color: {SECONDARY_BACKGROUND_COLOR};
     color: {PRIMARY_TEXT_COLOR};
@@ -150,6 +154,19 @@ QListWidget[role="packageList"]::item {{
     padding: 6px 8px;
 }}
 
+QTreeView[role="fileTree"] {{
+    background-color: {BACKGROUND_COLOR};
+    border: none;
+}}
+
+QTreeView[role="fileTree"]::item {{
+    padding: 3px 4px;
+}}
+
+QListWidget[role="projectList"]::item {{
+    padding: 7px 8px;
+}}
+
 QListView::item:hover,
 QListWidget::item:hover,
 QTreeView::item:hover {{
@@ -174,6 +191,38 @@ QPlainTextEdit {{
     selection-color: {PRIMARY_TEXT_COLOR};
 }}
 
+QComboBox {{
+    background-color: {INPUT_BACKGROUND_COLOR};
+    color: {PRIMARY_TEXT_COLOR};
+    border: 1px solid {BORDER_COLOR};
+    border-radius: 3px;
+    padding: 4px 24px 4px 6px;
+}}
+
+QComboBox:hover,
+QComboBox:focus {{
+    border-color: {ACCENT_COLOR};
+}}
+
+QComboBox:disabled {{
+    color: {DISABLED_TEXT_COLOR};
+    background-color: {SECONDARY_BACKGROUND_COLOR};
+    border-color: {BORDER_COLOR};
+}}
+
+QComboBox::drop-down {{
+    border: none;
+    width: 20px;
+}}
+
+QComboBox QAbstractItemView {{
+    background-color: {SECONDARY_BACKGROUND_COLOR};
+    color: {PRIMARY_TEXT_COLOR};
+    border: 1px solid {BORDER_COLOR};
+    selection-background-color: {SELECTION_COLOR};
+    selection-color: {PRIMARY_TEXT_COLOR};
+}}
+
 QLineEdit:focus,
 QPlainTextEdit:focus {{
     border-color: {ACCENT_COLOR};
@@ -183,6 +232,25 @@ QLineEdit:disabled,
 QPlainTextEdit:disabled {{
     color: {DISABLED_TEXT_COLOR};
     background-color: {SECONDARY_BACKGROUND_COLOR};
+}}
+
+QPlainTextEdit[role="documentEditor"] {{
+    background-color: {INPUT_BACKGROUND_COLOR};
+    border: none;
+    border-radius: 0;
+    padding: 6px 8px;
+}}
+
+QPlainTextEdit[role="documentEditor"]:focus {{
+    border: none;
+}}
+
+QPlainTextEdit[role="consoleOutput"] {{
+    background-color: {INPUT_BACKGROUND_COLOR};
+    border: 1px solid {BORDER_COLOR};
+    border-radius: 2px;
+    padding: 6px;
+    font-family: monospace;
 }}
 
 QPushButton,
@@ -306,6 +374,12 @@ QFrame[role="sectionDivider"] {{
     border: none;
     min-height: 1px;
     max-height: 1px;
+}}
+
+QLabel[role="applicationTitle"] {{
+    color: {PRIMARY_TEXT_COLOR};
+    font-size: 22px;
+    font-weight: 600;
 }}
 
 QLabel[role="pageTitle"] {{

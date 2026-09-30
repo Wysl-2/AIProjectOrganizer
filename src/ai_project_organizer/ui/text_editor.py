@@ -1,5 +1,5 @@
 from PySide6.QtCore import QRect, QSize, Qt
-from PySide6.QtGui import QPainter, QPaintEvent, QResizeEvent
+from PySide6.QtGui import QPainter, QPaintEvent, QPalette, QResizeEvent
 from PySide6.QtWidgets import QPlainTextEdit, QWidget
 
 
@@ -18,6 +18,11 @@ class LineNumberArea(QWidget):
 class TextEditor(QPlainTextEdit):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+
+        self.setProperty(
+            "role",
+            "documentEditor",
+        )
 
         self.line_number_area = LineNumberArea(self)
 
@@ -97,7 +102,9 @@ class TextEditor(QPlainTextEdit):
 
         painter.fillRect(
             event.rect(),
-            self.palette().window(),
+            self.palette().color(
+                QPalette.ColorRole.AlternateBase
+            ),
         )
 
         block = self.firstVisibleBlock()
@@ -121,7 +128,9 @@ class TextEditor(QPlainTextEdit):
                 line_number = str(block_number + 1)
 
                 painter.setPen(
-                    self.palette().windowText().color()
+                    self.palette().color(
+                        QPalette.ColorRole.PlaceholderText
+                    )
                 )
 
                 painter.drawText(

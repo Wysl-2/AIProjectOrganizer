@@ -66,6 +66,10 @@ class AddPackageDialog(QDialog):
             create_button.setText(
                 "Create"
             )
+            create_button.setProperty(
+                "role",
+                "primary",
+            )
 
         buttons.accepted.connect(
             self.accept

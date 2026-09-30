@@ -35,27 +35,36 @@ class WelcomePage(QWidget):
         super().__init__(parent)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(
+            24,
+            24,
+            24,
+            24,
+        )
+        layout.setSpacing(
+            12
+        )
 
-        title_label = QLabel(
+        self.title_label = QLabel(
             "AI Project Organizer"
         )
-        title_font = title_label.font()
-        title_font.setPointSize(
-            title_font.pointSize() + 6
-        )
-        title_font.setBold(True)
-        title_label.setFont(
-            title_font
+        self.title_label.setProperty(
+            "role",
+            "applicationTitle",
         )
 
         layout.addWidget(
-            title_label
+            self.title_label
         )
 
         button_layout = QHBoxLayout()
 
         self.create_project_button = QPushButton(
             "Create New Project"
+        )
+        self.create_project_button.setProperty(
+            "role",
+            "primary",
         )
         self.create_project_button.clicked.connect(
             self.create_project_requested.emit
@@ -80,27 +89,34 @@ class WelcomePage(QWidget):
             button_layout
         )
 
-        projects_label = QLabel(
+        self.projects_label = QLabel(
             "Projects"
         )
-        projects_font = projects_label.font()
-        projects_font.setBold(True)
-        projects_label.setFont(
-            projects_font
+        self.projects_label.setProperty(
+            "role",
+            "sectionTitle",
         )
 
         layout.addWidget(
-            projects_label
+            self.projects_label
         )
 
         self.empty_label = QLabel(
             "No Projects have been opened yet."
+        )
+        self.empty_label.setProperty(
+            "role",
+            "secondary",
         )
         layout.addWidget(
             self.empty_label
         )
 
         self.project_list = QListWidget()
+        self.project_list.setProperty(
+            "role",
+            "projectList",
+        )
         self.project_list.itemActivated.connect(
             self._emit_project_open
         )

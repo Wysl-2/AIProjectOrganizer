@@ -1094,5 +1094,33 @@ class FileTreeImportTests(unittest.TestCase):
         )
 
 
+class FileTreePresentationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.application = QApplication.instance() or QApplication([])
+
+    def test_view_uses_file_tree_presentation(self) -> None:
+        view = FileTreeView()
+
+        self.assertEqual(
+            view.property(
+                "role"
+            ),
+            "fileTree",
+        )
+        self.assertTrue(
+            view.isHeaderHidden()
+        )
+        self.assertTrue(
+            view.uniformRowHeights()
+        )
+        self.assertEqual(
+            view.indentation(),
+            16,
+        )
+
+        view.close()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ os.environ.setdefault(
     "offscreen",
 )
 
+from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QApplication
 
 from ai_project_organizer.implementation_package import (
@@ -73,6 +74,74 @@ class PackageInstallDialogTests(unittest.TestCase):
             dialog.is_running
         )
 
+    def test_dialog_uses_structured_install_presentation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            target = root / "target"
+            target.mkdir()
+            extracted = self._package(
+                root,
+                "print('unused')\n",
+            )
+
+            dialog = PackageInstallDialog(
+                "PKG01",
+                extracted,
+                target,
+                sys.executable,
+            )
+
+            self.assertEqual(
+                dialog.package_title_label.text(),
+                "PKG01",
+            )
+            self.assertEqual(
+                dialog.package_title_label.property(
+                    "role"
+                ),
+                "pageTitle",
+            )
+            self.assertEqual(
+                dialog.installer_metadata_label.property(
+                    "role"
+                ),
+                "metadataLabel",
+            )
+            self.assertEqual(
+                dialog.target_metadata_label.property(
+                    "role"
+                ),
+                "metadataLabel",
+            )
+            self.assertEqual(
+                dialog.status_metadata_label.property(
+                    "role"
+                ),
+                "metadataLabel",
+            )
+            self.assertEqual(
+                dialog.status_label.text(),
+                "Ready",
+            )
+            self.assertEqual(
+                dialog.status_label.property(
+                    "role"
+                ),
+                "secondary",
+            )
+            self.assertEqual(
+                dialog.output_panel.title_label.text(),
+                "INSTALLER OUTPUT",
+            )
+            self.assertEqual(
+                dialog.output_edit.property(
+                    "role"
+                ),
+                "consoleOutput",
+            )
+
+            dialog.close()
+
     def test_success_streams_output_and_uses_separate_arguments(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -129,6 +198,12 @@ class PackageInstallDialogTests(unittest.TestCase):
                 "completed successfully",
                 dialog.status_label.text().lower(),
             )
+            self.assertEqual(
+                dialog.status_label.property(
+                    "role"
+                ),
+                "secondary",
+            )
             self.assertTrue(
                 dialog.close_button.isEnabled()
             )
@@ -158,6 +233,12 @@ class PackageInstallDialogTests(unittest.TestCase):
                 "exit code 3",
                 dialog.status_label.text().lower(),
             )
+            self.assertEqual(
+                dialog.status_label.property(
+                    "role"
+                ),
+                "error",
+            )
 
     def test_failed_start_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -184,9 +265,49 @@ class PackageInstallDialogTests(unittest.TestCase):
                 "unable to start",
                 dialog.status_label.text().lower(),
             )
+            self.assertEqual(
+                dialog.status_label.property(
+                    "role"
+                ),
+                "error",
+            )
             self.assertTrue(
                 dialog.close_button.isEnabled()
             )
+
+    def test_crash_exit_uses_error_presentation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            target = root / "target"
+            target.mkdir()
+            extracted = self._package(
+                root,
+                "print('unused')\n",
+            )
+
+            dialog = PackageInstallDialog(
+                "PKG01",
+                extracted,
+                target,
+                sys.executable,
+            )
+            dialog._process_finished(
+                1,
+                QProcess.ExitStatus.CrashExit,
+            )
+
+            self.assertIn(
+                "terminated unexpectedly",
+                dialog.status_label.text().lower(),
+            )
+            self.assertEqual(
+                dialog.status_label.property(
+                    "role"
+                ),
+                "error",
+            )
+
+            dialog.close()
 
     def test_close_is_disabled_while_running(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

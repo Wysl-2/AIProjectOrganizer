@@ -74,6 +74,10 @@ class NewProjectDialog(QDialog):
             create_button.setText(
                 "Create"
             )
+            create_button.setProperty(
+                "role",
+                "primary",
+            )
         buttons.accepted.connect(
             self._accept_project
         )

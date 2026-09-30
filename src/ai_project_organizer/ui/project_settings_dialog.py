@@ -58,6 +58,14 @@ class ProjectSettingsDialog(QDialog):
             | QDialogButtonBox.StandardButton.Cancel,
             parent=self,
         )
+        save_button = buttons.button(
+            QDialogButtonBox.StandardButton.Save
+        )
+        if save_button is not None:
+            save_button.setProperty(
+                "role",
+                "primary",
+            )
         buttons.accepted.connect(
             self._accept_configuration
         )

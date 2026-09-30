@@ -5,7 +5,10 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialogButtonBox,
+)
 
 from ai_project_organizer.project import (
     ProjectMetadata,
@@ -40,6 +43,30 @@ class NewProjectDialogTests(unittest.TestCase):
         dialog.github_repository_edit.setText(
             f"Wysl-2/{name}"
         )
+
+    def test_create_button_uses_primary_presentation(self) -> None:
+        dialog = NewProjectDialog()
+        button_box = dialog.findChild(
+            QDialogButtonBox
+        )
+        self.assertIsNotNone(
+            button_box
+        )
+        create_button = button_box.button(
+            QDialogButtonBox.StandardButton.Ok
+        )
+
+        self.assertIsNotNone(
+            create_button
+        )
+        self.assertEqual(
+            create_button.property(
+                "role"
+            ),
+            "primary",
+        )
+
+        dialog.close()
 
     def test_valid_fields_produce_workspace_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

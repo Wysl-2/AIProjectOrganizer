@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QDialogButtonBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -16,6 +17,12 @@ from PySide6.QtWidgets import (
 from ai_project_organizer.implementation_package import (
     ExtractedImplementationPackage,
     ImplementationPackageReadme,
+)
+from ai_project_organizer.ui.resources import (
+    load_icon,
+)
+from ai_project_organizer.ui.section_panel import (
+    SectionPanel,
 )
 
 
@@ -50,24 +57,73 @@ class PackageInspectorDialog(QDialog):
             620,
         )
 
-        package_label = QLabel(
-            f"Package: {package_id}",
+        self.package_title_label = QLabel(
+            package_id,
             self,
         )
-        root_label = QLabel(
-            (
-                "Extracted Root: "
-                f"{extracted_package.root_path.name}"
-            ),
+        self.package_title_label.setProperty(
+            "role",
+            "pageTitle",
+        )
+
+        self.root_metadata_label = QLabel(
+            "Extracted Root",
             self,
         )
-        state_label = QLabel(
-            "State: Extracted",
+        self.root_metadata_label.setProperty(
+            "role",
+            "metadataLabel",
+        )
+        self.root_value_label = QLabel(
+            extracted_package.root_path.name,
             self,
         )
 
+        self.state_metadata_label = QLabel(
+            "State",
+            self,
+        )
+        self.state_metadata_label.setProperty(
+            "role",
+            "metadataLabel",
+        )
+        self.state_value_label = QLabel(
+            "Extracted",
+            self,
+        )
+
+        metadata_layout = QGridLayout()
+        metadata_layout.setColumnStretch(
+            1,
+            1,
+        )
+        metadata_layout.addWidget(
+            self.root_metadata_label,
+            0,
+            0,
+        )
+        metadata_layout.addWidget(
+            self.root_value_label,
+            0,
+            1,
+        )
+        metadata_layout.addWidget(
+            self.state_metadata_label,
+            1,
+            0,
+        )
+        metadata_layout.addWidget(
+            self.state_value_label,
+            1,
+            1,
+        )
+
+        self.review_panel = SectionPanel(
+            "PACKAGE REVIEW",
+            self,
+        )
         self.review_edit = QPlainTextEdit(
-            self
+            self.review_panel
         )
         self.review_edit.setReadOnly(
             True
@@ -75,22 +131,52 @@ class PackageInspectorDialog(QDialog):
         self.review_edit.setPlainText(
             self._review_text()
         )
+        self.review_panel.content_layout.addWidget(
+            self.review_edit,
+            1,
+        )
 
         self.open_readme_button = QPushButton(
             "Open README",
             self,
         )
+        self.open_readme_button.setProperty(
+            "role",
+            "toolbar",
+        )
         self.open_contents_button = QPushButton(
             "Open Contents",
             self,
+        )
+        self.open_contents_button.setProperty(
+            "role",
+            "toolbar",
+        )
+        self.open_contents_button.setIcon(
+            load_icon(
+                "folder.svg"
+            )
         )
         self.copy_commit_button = QPushButton(
             "Copy Git Commit Message",
             self,
         )
+        self.copy_commit_button.setProperty(
+            "role",
+            "toolbar",
+        )
         self.install_button = QPushButton(
             "Install Package",
             self,
+        )
+        self.install_button.setProperty(
+            "role",
+            "primary",
+        )
+        self.install_button.setIcon(
+            load_icon(
+                "install-line.svg"
+            )
         )
         self.copy_commit_button.setEnabled(
             bool(
@@ -121,11 +207,11 @@ class PackageInspectorDialog(QDialog):
         action_layout.addWidget(
             self.copy_commit_button
         )
-        action_layout.addWidget(
-            self.install_button
-        )
         action_layout.addStretch(
             1
+        )
+        action_layout.addWidget(
+            self.install_button
         )
 
         close_buttons = QDialogButtonBox(
@@ -140,16 +226,13 @@ class PackageInspectorDialog(QDialog):
             self
         )
         layout.addWidget(
-            package_label
+            self.package_title_label
+        )
+        layout.addLayout(
+            metadata_layout
         )
         layout.addWidget(
-            root_label
-        )
-        layout.addWidget(
-            state_label
-        )
-        layout.addWidget(
-            self.review_edit,
+            self.review_panel,
             1,
         )
         layout.addLayout(
