@@ -94,6 +94,42 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
         ]
 
+    def test_workspace_uses_flat_packages_section(self) -> None:
+        panel = PackageWorkspacePanel()
+
+        self.assertEqual(
+            panel.title_label.text(),
+            "PACKAGES",
+        )
+        self.assertEqual(
+            panel.add_package_button.text(),
+            "Add",
+        )
+        self.assertEqual(
+            panel.add_package_button.property(
+                "role"
+            ),
+            "toolbar",
+        )
+        self.assertEqual(
+            panel.status_label.property(
+                "role"
+            ),
+            "secondary",
+        )
+        self.assertIs(
+            panel.splitter.widget(
+                0
+            ),
+            panel.package_list,
+        )
+        self.assertIs(
+            panel.splitter.widget(
+                1
+            ),
+            panel.details_stack,
+        )
+
     @staticmethod
     def _write_valid_archive(
             path: Path,

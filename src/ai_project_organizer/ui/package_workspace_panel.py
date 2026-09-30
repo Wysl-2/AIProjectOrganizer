@@ -27,6 +27,9 @@ from ai_project_organizer.ui.document_list_panel import (
 from ai_project_organizer.ui.implementation_package_drop_list import (
     ImplementationPackageDropListWidget,
 )
+from ai_project_organizer.ui.section_panel import (
+    SectionPanel,
+)
 from ai_project_organizer.workspace_structure import (
     discover_feature_packages,
     is_project_package_structure_initialized,
@@ -56,7 +59,7 @@ _STATE_INCOMPLETE = "incomplete"
 _STATE_ERROR = "error"
 
 
-class PackageWorkspacePanel(QGroupBox):
+class PackageWorkspacePanel(SectionPanel):
     file_open_requested = Signal(str)
     new_document_requested = Signal(str)
     add_package_requested = Signal(str)
@@ -87,7 +90,7 @@ class PackageWorkspacePanel(QGroupBox):
             parent: QWidget | None = None,
     ) -> None:
         super().__init__(
-            "Packages",
+            "PACKAGES",
             parent,
         )
 
@@ -100,6 +103,10 @@ class PackageWorkspacePanel(QGroupBox):
         )
         self.status_label.setWordWrap(
             True
+        )
+        self.status_label.setProperty(
+            "role",
+            "secondary",
         )
         self.status_label.hide()
 
@@ -122,24 +129,17 @@ class PackageWorkspacePanel(QGroupBox):
         )
 
         self.add_package_button = QPushButton(
-            "Add Package",
+            "Add",
             self,
+        )
+        self.add_package_button.setProperty(
+            "role",
+            "toolbar",
         )
         self.add_package_button.clicked.connect(
             self._request_add_package
         )
-
-        list_panel = QWidget(
-            self
-        )
-        list_layout = QVBoxLayout(
-            list_panel
-        )
-        list_layout.addWidget(
-            self.package_list,
-            1,
-        )
-        list_layout.addWidget(
+        self.add_header_widget(
             self.add_package_button
         )
 
@@ -171,7 +171,7 @@ class PackageWorkspacePanel(QGroupBox):
             False
         )
         self.splitter.addWidget(
-            list_panel
+            self.package_list
         )
         self.splitter.addWidget(
             self.details_stack
@@ -185,13 +185,10 @@ class PackageWorkspacePanel(QGroupBox):
             2,
         )
 
-        layout = QVBoxLayout(
-            self
-        )
-        layout.addWidget(
+        self.content_layout.addWidget(
             self.status_label
         )
-        layout.addWidget(
+        self.content_layout.addWidget(
             self.splitter,
             1,
         )
@@ -221,6 +218,10 @@ class PackageWorkspacePanel(QGroupBox):
         )
         self.no_selection_label.setWordWrap(
             True
+        )
+        self.no_selection_label.setProperty(
+            "role",
+            "secondary",
         )
 
         layout = QVBoxLayout(

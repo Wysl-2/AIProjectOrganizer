@@ -4,7 +4,6 @@ from PySide6.QtCore import QPoint, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidgetItem,
@@ -24,6 +23,9 @@ from ai_project_organizer.ui.implementation_package_drop_list import (
 )
 from ai_project_organizer.ui.package_workspace_panel import (
     PackageWorkspacePanel,
+)
+from ai_project_organizer.ui.section_panel import (
+    SectionPanel,
 )
 from ai_project_organizer.workspace_structure import (
     discover_project_features,
@@ -102,6 +104,10 @@ class ProjectView(QWidget):
         self.status_label.setWordWrap(
             True
         )
+        self.status_label.setProperty(
+            "role",
+            "secondary",
+        )
         self.status_label.hide()
 
         self.initialize_project_button = QPushButton(
@@ -133,6 +139,15 @@ class ProjectView(QWidget):
         layout = QVBoxLayout(
             self
         )
+        layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        layout.setSpacing(
+            6
+        )
         layout.addWidget(
             self.status_label
         )
@@ -156,15 +171,33 @@ class ProjectView(QWidget):
         self.project_title_label = QLabel(
             page
         )
+        self.project_title_label.setProperty(
+            "role",
+            "pageTitle",
+        )
+
         self.project_refresh_button = QPushButton(
             "Refresh",
             page,
+        )
+        self.project_refresh_button.setProperty(
+            "role",
+            "toolbar",
         )
         self.project_refresh_button.clicked.connect(
             self.refresh
         )
 
         header = QHBoxLayout()
+        header.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        header.setSpacing(
+            6
+        )
         header.addWidget(
             self.project_title_label
         )
@@ -185,22 +218,27 @@ class ProjectView(QWidget):
             self.new_document_requested.emit
         )
 
-        features_group = QGroupBox(
-            "Features",
+        self.features_panel = SectionPanel(
+            "FEATURES",
             page,
         )
+
         self.features_status_label = QLabel(
-            features_group
+            self.features_panel
         )
         self.features_status_label.setWordWrap(
             True
+        )
+        self.features_status_label.setProperty(
+            "role",
+            "secondary",
         )
         self.features_status_label.hide()
 
         self.feature_list = ImplementationPackageDropListWidget(
             target_role=_FEATURE_NAME_ROLE,
             allow_background=False,
-            parent=features_group,
+            parent=self.features_panel,
         )
         self.feature_list.itemDoubleClicked.connect(
             self._feature_item_activated
@@ -216,25 +254,26 @@ class ProjectView(QWidget):
         )
 
         self.add_feature_button = QPushButton(
-            "Add Feature",
-            features_group,
+            "Add",
+            self.features_panel,
+        )
+        self.add_feature_button.setProperty(
+            "role",
+            "toolbar",
         )
         self.add_feature_button.clicked.connect(
             lambda: self.add_feature_requested.emit()
         )
-
-        features_layout = QVBoxLayout(
-            features_group
+        self.features_panel.add_header_widget(
+            self.add_feature_button
         )
-        features_layout.addWidget(
+
+        self.features_panel.content_layout.addWidget(
             self.features_status_label
         )
-        features_layout.addWidget(
+        self.features_panel.content_layout.addWidget(
             self.feature_list,
             1,
-        )
-        features_layout.addWidget(
-            self.add_feature_button
         )
 
         self.project_splitter = QSplitter(
@@ -248,7 +287,7 @@ class ProjectView(QWidget):
             self.project_documents_panel
         )
         self.project_splitter.addWidget(
-            features_group
+            self.features_panel
         )
         self.project_splitter.setStretchFactor(
             0,
@@ -261,6 +300,15 @@ class ProjectView(QWidget):
 
         layout = QVBoxLayout(
             page
+        )
+        layout.setContentsMargins(
+            8,
+            8,
+            8,
+            8,
+        )
+        layout.setSpacing(
+            8
         )
         layout.addLayout(
             header
@@ -283,6 +331,10 @@ class ProjectView(QWidget):
             "Back to Features",
             page,
         )
+        self.back_to_features_button.setProperty(
+            "role",
+            "toolbar",
+        )
         self.back_to_features_button.clicked.connect(
             self._return_to_project_page
         )
@@ -290,15 +342,33 @@ class ProjectView(QWidget):
         self.feature_title_label = QLabel(
             page
         )
+        self.feature_title_label.setProperty(
+            "role",
+            "pageTitle",
+        )
+
         self.feature_refresh_button = QPushButton(
             "Refresh",
             page,
+        )
+        self.feature_refresh_button.setProperty(
+            "role",
+            "toolbar",
         )
         self.feature_refresh_button.clicked.connect(
             self.refresh
         )
 
         header = QHBoxLayout()
+        header.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        header.setSpacing(
+            6
+        )
         header.addWidget(
             self.back_to_features_button
         )
@@ -317,6 +387,10 @@ class ProjectView(QWidget):
         )
         self.feature_status_label.setWordWrap(
             True
+        )
+        self.feature_status_label.setProperty(
+            "role",
+            "secondary",
         )
         self.feature_status_label.hide()
 
@@ -391,6 +465,15 @@ class ProjectView(QWidget):
 
         layout = QVBoxLayout(
             page
+        )
+        layout.setContentsMargins(
+            8,
+            8,
+            8,
+            8,
+        )
+        layout.setSpacing(
+            8
         )
         layout.addLayout(
             header

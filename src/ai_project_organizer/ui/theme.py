@@ -267,6 +267,13 @@ QToolTip {{
     padding: 4px;
 }}
 
+QFrame[role="sectionDivider"] {{
+    background-color: {BORDER_COLOR};
+    border: none;
+    min-height: 1px;
+    max-height: 1px;
+}}
+
 QLabel[role="pageTitle"] {{
     color: {PRIMARY_TEXT_COLOR};
     font-size: 15px;

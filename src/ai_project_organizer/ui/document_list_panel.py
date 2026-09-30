@@ -2,13 +2,15 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QGroupBox,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QVBoxLayout,
     QWidget,
+)
+
+from ai_project_organizer.ui.section_panel import (
+    SectionPanel,
 )
 
 
@@ -16,7 +18,7 @@ _ENTRY_PATH_ROLE = int(Qt.ItemDataRole.UserRole)
 _ENTRY_REAL_DIRECTORY_ROLE = _ENTRY_PATH_ROLE + 1
 
 
-class DocumentListPanel(QGroupBox):
+class DocumentListPanel(SectionPanel):
     file_open_requested = Signal(str)
     new_document_requested = Signal(str)
 
@@ -24,12 +26,19 @@ class DocumentListPanel(QGroupBox):
             self,
             parent: QWidget | None = None,
     ) -> None:
-        super().__init__("Documents", parent)
+        super().__init__(
+            "DOCUMENTS",
+            parent,
+        )
 
         self.directory_path: Path | None = None
 
         self.status_label = QLabel(self)
         self.status_label.setWordWrap(True)
+        self.status_label.setProperty(
+            "role",
+            "secondary",
+        )
         self.status_label.hide()
 
         self.list_widget = QListWidget(self)
@@ -38,17 +47,27 @@ class DocumentListPanel(QGroupBox):
         )
 
         self.new_document_button = QPushButton(
-            "New Document",
+            "New",
             self,
+        )
+        self.new_document_button.setProperty(
+            "role",
+            "toolbar",
         )
         self.new_document_button.clicked.connect(
             self._request_new_document
         )
+        self.add_header_widget(
+            self.new_document_button
+        )
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.status_label)
-        layout.addWidget(self.list_widget, 1)
-        layout.addWidget(self.new_document_button)
+        self.content_layout.addWidget(
+            self.status_label
+        )
+        self.content_layout.addWidget(
+            self.list_widget,
+            1,
+        )
 
         self._update_enabled_state()
 

@@ -67,6 +67,7 @@ class UiThemeTests(unittest.TestCase):
         for role in (
             'role="pageTitle"',
             'role="sectionTitle"',
+            'role="sectionDivider"',
             'role="secondary"',
             'role="metadataLabel"',
             'role="toolbar"',

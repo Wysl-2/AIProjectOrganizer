@@ -31,6 +31,30 @@ class DocumentListPanelTests(unittest.TestCase):
             )
         ]
 
+    def test_section_presentation_uses_compact_header_action(self) -> None:
+        panel = DocumentListPanel()
+
+        self.assertEqual(
+            panel.title_label.text(),
+            "DOCUMENTS",
+        )
+        self.assertEqual(
+            panel.new_document_button.text(),
+            "New",
+        )
+        self.assertEqual(
+            panel.new_document_button.property(
+                "role"
+            ),
+            "toolbar",
+        )
+        self.assertEqual(
+            panel.status_label.property(
+                "role"
+            ),
+            "secondary",
+        )
+
     def test_directory_is_listed_without_recursive_expansion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             documents = Path(temporary_directory)

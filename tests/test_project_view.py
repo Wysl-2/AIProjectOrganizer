@@ -106,6 +106,54 @@ class ProjectViewTests(unittest.TestCase):
             )
         ]
 
+    def test_structured_pages_use_semantic_section_presentation(self) -> None:
+        view = ProjectView()
+
+        self.assertEqual(
+            view.project_title_label.property(
+                "role"
+            ),
+            "pageTitle",
+        )
+        self.assertEqual(
+            view.project_refresh_button.property(
+                "role"
+            ),
+            "toolbar",
+        )
+        self.assertEqual(
+            view.features_panel.title_label.text(),
+            "FEATURES",
+        )
+        self.assertEqual(
+            view.add_feature_button.text(),
+            "Add",
+        )
+        self.assertEqual(
+            view.add_feature_button.property(
+                "role"
+            ),
+            "toolbar",
+        )
+        self.assertEqual(
+            view.feature_title_label.property(
+                "role"
+            ),
+            "pageTitle",
+        )
+        self.assertEqual(
+            view.back_to_features_button.property(
+                "role"
+            ),
+            "toolbar",
+        )
+        self.assertEqual(
+            view.feature_refresh_button.property(
+                "role"
+            ),
+            "toolbar",
+        )
+
     def test_project_page_lists_documents_and_features(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(
