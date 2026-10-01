@@ -1159,6 +1159,17 @@ class MainWindow(QMainWindow):
             package_path
         )
 
+        if self._copy_implementation_package_to_contents(
+                source_path,
+                contents_path,
+        ):
+            self.project_view.refresh()
+
+    def _copy_implementation_package_to_contents(
+            self,
+            source_path: str | Path,
+            contents_path: Path,
+    ) -> bool:
         try:
             copy_implementation_package_archive(
                 source_path,
@@ -1170,14 +1181,14 @@ class MainWindow(QMainWindow):
                 "Implementation Package Already Exists",
                 str(error),
             )
-            return
+            return False
         except ImplementationPackageError as error:
             QMessageBox.warning(
                 self,
                 "Invalid Implementation Package",
                 str(error),
             )
-            return
+            return False
         except OSError as error:
             QMessageBox.warning(
                 self,
@@ -1187,9 +1198,9 @@ class MainWindow(QMainWindow):
                     f"\n\n{error}"
                 ),
             )
-            return
+            return False
 
-        self.project_view.refresh()
+        return True
 
     def _package_contents_for_artifact_action(
             self,
@@ -1251,6 +1262,17 @@ class MainWindow(QMainWindow):
         if contents_path is None:
             return
 
+        self._extract_implementation_package_from_contents(
+            contents_path,
+            item_type="Package",
+        )
+
+    def _extract_implementation_package_from_contents(
+            self,
+            contents_path: Path,
+            *,
+            item_type: str,
+    ) -> None:
         try:
             archives = discover_implementation_package_archives(
                 contents_path
@@ -1260,7 +1282,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Unable to Extract Implementation Package",
                 (
-                    "Could not inspect Package Contents:"
+                    f"Could not inspect {item_type} Contents:"
                     f"\n\n{error}"
                 ),
             )
@@ -1271,7 +1293,7 @@ class MainWindow(QMainWindow):
                 self,
                 "No Implementation Package ZIP",
                 (
-                    "This Package does not contain a valid "
+                    f"This {item_type} does not contain a valid "
                     "implementation-package ZIP."
                 ),
             )
@@ -1347,6 +1369,19 @@ class MainWindow(QMainWindow):
         if contents_path is None:
             return
 
+        self._inspect_implementation_package_from_contents(
+            contents_path,
+            item_type="Package",
+            item_id=package_id,
+        )
+
+    def _inspect_implementation_package_from_contents(
+            self,
+            contents_path: Path,
+            *,
+            item_type: str,
+            item_id: str,
+    ) -> None:
         try:
             extracted_packages = (
                 discover_extracted_implementation_packages(
@@ -1358,7 +1393,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Unable to Inspect Implementation Package",
                 (
-                    "Could not inspect Package Contents:"
+                    f"Could not inspect {item_type} Contents:"
                     f"\n\n{error}"
                 ),
             )
@@ -1374,7 +1409,7 @@ class MainWindow(QMainWindow):
                     self,
                     "Unable to Inspect Implementation Package",
                     (
-                        "Could not inspect Package Contents:"
+                        f"Could not inspect {item_type} Contents:"
                         f"\n\n{error}"
                     ),
                 )
@@ -1394,7 +1429,7 @@ class MainWindow(QMainWindow):
                     self,
                     "No Extracted Implementation Package",
                     (
-                        "This Package does not contain a valid "
+                        f"This {item_type} does not contain a valid "
                         "extracted implementation package."
                     ),
                 )
@@ -1449,7 +1484,7 @@ class MainWindow(QMainWindow):
             return
 
         dialog = PackageInspectorDialog(
-            package_id,
+            item_id,
             selected_package,
             readme,
             contents_path,
@@ -1459,12 +1494,13 @@ class MainWindow(QMainWindow):
             self._open_file_path
         )
         dialog.open_contents_requested.connect(
-            self._open_package_contents_from_inspector
+            self._open_implementation_contents_from_inspector
         )
         dialog.install_requested.connect(
-            lambda root_name: self._install_implementation_package(
-                feature_name,
-                package_id,
+            lambda root_name: self._install_implementation_package_from_contents(
+                contents_path,
+                item_type=item_type,
+                item_id=item_id,
                 preferred_root_name=root_name,
             )
         )
@@ -1595,7 +1631,8 @@ class MainWindow(QMainWindow):
 
     def _confirm_implementation_package_installation(
             self,
-            package_id: str,
+            item_type: str,
+            item_id: str,
             extracted_package: ExtractedImplementationPackage,
             target_path: Path,
     ) -> bool:
@@ -1610,7 +1647,7 @@ class MainWindow(QMainWindow):
         )
         message_box.setText(
             (
-                f'Install Package "{package_id}" into the '
+                f'Install {item_type} "{item_id}" into the '
                 "configured local repository?"
             )
         )
@@ -1658,6 +1695,21 @@ class MainWindow(QMainWindow):
         if contents_path is None:
             return
 
+        self._install_implementation_package_from_contents(
+            contents_path,
+            item_type="Package",
+            item_id=package_id,
+            preferred_root_name=preferred_root_name,
+        )
+
+    def _install_implementation_package_from_contents(
+            self,
+            contents_path: Path,
+            *,
+            item_type: str,
+            item_id: str,
+            preferred_root_name: str | None = None,
+    ) -> None:
         try:
             extracted_packages = (
                 discover_extracted_implementation_packages(
@@ -1669,7 +1721,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Unable to Install Implementation Package",
                 (
-                    "Could not inspect Package Contents:"
+                    f"Could not inspect {item_type} Contents:"
                     f"\n\n{error}"
                 ),
             )
@@ -1685,7 +1737,7 @@ class MainWindow(QMainWindow):
                     self,
                     "Unable to Install Implementation Package",
                     (
-                        "Could not inspect Package Contents:"
+                        f"Could not inspect {item_type} Contents:"
                         f"\n\n{error}"
                     ),
                 )
@@ -1706,7 +1758,7 @@ class MainWindow(QMainWindow):
                     self,
                     "No Installable Implementation Package",
                     (
-                        "This Package does not contain a valid "
+                        f"This {item_type} does not contain a valid "
                         "extracted implementation package."
                     ),
                 )
@@ -1763,7 +1815,8 @@ class MainWindow(QMainWindow):
             return
 
         if not self._confirm_implementation_package_installation(
-                package_id,
+                item_type,
+                item_id,
                 selected_package,
                 target_path,
         ):
@@ -1803,7 +1856,7 @@ class MainWindow(QMainWindow):
             return
 
         dialog = PackageInstallDialog(
-            package_id,
+            item_id,
             selected_package,
             target_path,
             python_program,
@@ -1812,7 +1865,7 @@ class MainWindow(QMainWindow):
         dialog.start_installation()
         dialog.exec()
 
-    def _open_package_contents_from_inspector(
+    def _open_implementation_contents_from_inspector(
             self,
             contents_path: str,
     ) -> None:
@@ -1827,10 +1880,10 @@ class MainWindow(QMainWindow):
         ):
             QMessageBox.warning(
                 self,
-                "Package Contents Unavailable",
+                "Implementation Contents Unavailable",
                 (
-                    "The Package Contents directory is no longer "
-                    "available."
+                    "The implementation Contents directory is no "
+                    "longer available."
                 ),
             )
             return
@@ -1846,10 +1899,10 @@ class MainWindow(QMainWindow):
         if not opened:
             QMessageBox.warning(
                 self,
-                "Unable to Open Package Contents",
+                "Unable to Open Implementation Contents",
                 (
                     "The system file manager could not open "
-                    "the Package Contents directory."
+                    "the implementation Contents directory."
                 ),
             )
 

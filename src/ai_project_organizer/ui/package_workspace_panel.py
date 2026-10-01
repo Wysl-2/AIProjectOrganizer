@@ -4,9 +4,6 @@ from PySide6.QtCore import QPoint, Qt, QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
-    QFileDialog,
-    QGridLayout,
-    QHBoxLayout,
     QLabel,
     QListWidgetItem,
     QMenu,
@@ -17,15 +14,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ai_project_organizer.implementation_package import (
-    discover_extracted_implementation_packages,
-    discover_implementation_package_archives,
-)
-from ai_project_organizer.ui.document_list_panel import (
-    DocumentListPanel,
-)
 from ai_project_organizer.ui.implementation_package_drop_list import (
     ImplementationPackageDropListWidget,
+)
+from ai_project_organizer.ui.implementation_work_item_panel import (
+    ImplementationWorkItemPanel,
 )
 from ai_project_organizer.ui.resources import (
     load_icon,
@@ -163,14 +156,34 @@ class PackageWorkspacePanel(SectionPanel):
             self
         )
         self.no_selection_page = self._build_no_selection_page()
-        self.package_details_page = self._build_package_details_page()
+        self.work_item_panel = ImplementationWorkItemPanel(
+            self
+        )
+        self.work_item_panel.file_open_requested.connect(
+            self.file_open_requested.emit
+        )
+        self.work_item_panel.new_document_requested.connect(
+            self.new_document_requested.emit
+        )
+        self.work_item_panel.implementation_package_import_requested.connect(
+            self._work_item_import_requested
+        )
+        self.work_item_panel.extract_implementation_package_requested.connect(
+            self._work_item_extraction_requested
+        )
+        self.work_item_panel.inspect_implementation_package_requested.connect(
+            self._work_item_inspection_requested
+        )
+        self.work_item_panel.install_implementation_package_requested.connect(
+            self._work_item_installation_requested
+        )
         self.recovery_page = self._build_recovery_page()
 
         self.details_stack.addWidget(
             self.no_selection_page
         )
         self.details_stack.addWidget(
-            self.package_details_page
+            self.work_item_panel
         )
         self.details_stack.addWidget(
             self.recovery_page
@@ -178,7 +191,6 @@ class PackageWorkspacePanel(SectionPanel):
         self.details_stack.setCurrentWidget(
             self.no_selection_page
         )
-
         self.splitter = QSplitter(
             Qt.Orientation.Horizontal,
             self,
@@ -215,18 +227,7 @@ class PackageWorkspacePanel(SectionPanel):
             1,
         )
 
-        self._set_artifact_metadata_visible(
-            False
-        )
-        self._set_artifact_action_state(
-            can_import=False,
-            can_extract=False,
-            can_inspect=False,
-            can_install=False,
-            can_open_contents=False,
-        )
         self._update_enabled_state()
-
     def _build_no_selection_page(
             self,
     ) -> QWidget:
@@ -278,276 +279,6 @@ class PackageWorkspacePanel(SectionPanel):
         )
         layout.addStretch(
             1
-        )
-
-        return page
-
-    def _build_package_details_page(
-            self,
-    ) -> QWidget:
-        page = QWidget(
-            self
-        )
-
-        self.package_title_label = QLabel(
-            page
-        )
-        self.package_title_label.setProperty(
-            "role",
-            "pageTitle",
-        )
-
-        self.package_documents_panel = DocumentListPanel(
-            page
-        )
-        self.package_documents_panel.file_open_requested.connect(
-            self.file_open_requested.emit
-        )
-        self.package_documents_panel.new_document_requested.connect(
-            self.new_document_requested.emit
-        )
-
-        self.artifact_panel = SectionPanel(
-            "IMPLEMENTATION PACKAGE",
-            page,
-        )
-
-        self.archive_metadata_label = QLabel(
-            "ZIP",
-            self.artifact_panel,
-        )
-        self.archive_metadata_label.setProperty(
-            "role",
-            "metadataLabel",
-        )
-
-        self.archive_status_label = QLabel(
-            self.artifact_panel
-        )
-        self.archive_status_label.setWordWrap(
-            True
-        )
-
-        self.extracted_metadata_label = QLabel(
-            "Extracted",
-            self.artifact_panel,
-        )
-        self.extracted_metadata_label.setProperty(
-            "role",
-            "metadataLabel",
-        )
-
-        self.extracted_status_label = QLabel(
-            self.artifact_panel
-        )
-        self.extracted_status_label.setWordWrap(
-            True
-        )
-
-        metadata_layout = QGridLayout()
-        metadata_layout.setContentsMargins(
-            0,
-            0,
-            0,
-            0,
-        )
-        metadata_layout.setHorizontalSpacing(
-            12
-        )
-        metadata_layout.setVerticalSpacing(
-            4
-        )
-        metadata_layout.addWidget(
-            self.archive_metadata_label,
-            0,
-            0,
-        )
-        metadata_layout.addWidget(
-            self.archive_status_label,
-            0,
-            1,
-        )
-        metadata_layout.addWidget(
-            self.extracted_metadata_label,
-            1,
-            0,
-        )
-        metadata_layout.addWidget(
-            self.extracted_status_label,
-            1,
-            1,
-        )
-        metadata_layout.setColumnStretch(
-            1,
-            1,
-        )
-
-        self.artifact_error_label = QLabel(
-            self.artifact_panel
-        )
-        self.artifact_error_label.setWordWrap(
-            True
-        )
-        self.artifact_error_label.setProperty(
-            "role",
-            "error",
-        )
-        self.artifact_error_label.hide()
-
-        self.import_package_button = QPushButton(
-            "Import ZIP",
-            self.artifact_panel,
-        )
-        self.import_package_button.setIcon(
-            load_icon(
-                "import.svg"
-            )
-        )
-        self.import_package_button.clicked.connect(
-            self._request_package_import
-        )
-
-        self.extract_package_button = QPushButton(
-            "Extract",
-            self.artifact_panel,
-        )
-        self.extract_package_button.clicked.connect(
-            self._request_package_extraction
-        )
-
-        self.inspect_package_button = QPushButton(
-            "Inspect",
-            self.artifact_panel,
-        )
-        self.inspect_package_button.setIcon(
-            load_icon(
-                "inspect.svg"
-            )
-        )
-        self.inspect_package_button.clicked.connect(
-            self._request_package_inspection
-        )
-
-        self.install_package_button = QPushButton(
-            "Install",
-            self.artifact_panel,
-        )
-        self.install_package_button.setIcon(
-            load_icon(
-                "install-line.svg"
-            )
-        )
-        self.install_package_button.clicked.connect(
-            self._request_package_installation
-        )
-
-        self.open_contents_button = QPushButton(
-            "Open Contents",
-            self.artifact_panel,
-        )
-        self.open_contents_button.setProperty(
-            "role",
-            "toolbar",
-        )
-        self.open_contents_button.setIcon(
-            load_icon(
-                "folder.svg"
-            )
-        )
-        self.open_contents_button.clicked.connect(
-            self._open_selected_package_contents
-        )
-
-        primary_actions = QGridLayout()
-        primary_actions.setContentsMargins(
-            0,
-            0,
-            0,
-            0,
-        )
-        primary_actions.setHorizontalSpacing(
-            4
-        )
-        primary_actions.setVerticalSpacing(
-            4
-        )
-        primary_actions.addWidget(
-            self.import_package_button,
-            0,
-            0,
-        )
-        primary_actions.addWidget(
-            self.extract_package_button,
-            0,
-            1,
-        )
-        primary_actions.addWidget(
-            self.inspect_package_button,
-            1,
-            0,
-        )
-        primary_actions.addWidget(
-            self.install_package_button,
-            1,
-            1,
-        )
-        primary_actions.setColumnStretch(
-            0,
-            1,
-        )
-        primary_actions.setColumnStretch(
-            1,
-            1,
-        )
-
-        secondary_actions = QHBoxLayout()
-        secondary_actions.setContentsMargins(
-            0,
-            0,
-            0,
-            0,
-        )
-        secondary_actions.addWidget(
-            self.open_contents_button
-        )
-        secondary_actions.addStretch(
-            1
-        )
-
-        self.artifact_panel.content_layout.addLayout(
-            metadata_layout
-        )
-        self.artifact_panel.content_layout.addWidget(
-            self.artifact_error_label
-        )
-        self.artifact_panel.content_layout.addLayout(
-            primary_actions
-        )
-        self.artifact_panel.content_layout.addLayout(
-            secondary_actions
-        )
-
-        layout = QVBoxLayout(
-            page
-        )
-        layout.setContentsMargins(
-            8,
-            4,
-            8,
-            8,
-        )
-        layout.setSpacing(
-            10
-        )
-        layout.addWidget(
-            self.package_title_label
-        )
-        layout.addWidget(
-            self.package_documents_panel,
-            1,
-        )
-        layout.addWidget(
-            self.artifact_panel
         )
 
         return page
@@ -908,125 +639,18 @@ class PackageWorkspacePanel(SectionPanel):
             package_path: Path,
     ) -> None:
         self._clear_selected_package_presentation()
-        self.package_title_label.setText(
-            package_id
-        )
-        self.package_documents_panel.set_directory(
+        self.work_item_panel.set_work_item(
+            package_id,
             package_documents_path(
                 package_path
-            )
-        )
-        self._refresh_artifact_state(
-            package_path
+            ),
+            package_contents_path(
+                package_path
+            ),
         )
         self.details_stack.setCurrentWidget(
-            self.package_details_page
+            self.work_item_panel
         )
-
-    def _refresh_artifact_state(
-            self,
-            package_path: Path,
-    ) -> None:
-        contents_path = package_contents_path(
-            package_path
-        )
-        contents_available = (
-            not contents_path.is_symlink()
-            and contents_path.exists()
-            and contents_path.is_dir()
-        )
-
-        self.archive_status_label.clear()
-        self.extracted_status_label.clear()
-        self.artifact_error_label.clear()
-        self.artifact_error_label.hide()
-        self._set_artifact_metadata_visible(
-            True
-        )
-
-        self._set_artifact_action_state(
-            can_import=True,
-            can_extract=False,
-            can_inspect=False,
-            can_install=False,
-            can_open_contents=contents_available,
-        )
-
-        try:
-            archives = discover_implementation_package_archives(
-                contents_path
-            )
-            extracted_packages = (
-                discover_extracted_implementation_packages(
-                    contents_path
-                )
-            )
-        except OSError as error:
-            self.archive_status_label.clear()
-            self.extracted_status_label.clear()
-            self._set_artifact_metadata_visible(
-                False
-            )
-            self.artifact_error_label.setText(
-                (
-                    "Unable to inspect Package Contents:"
-                    f"\n{error}"
-                )
-            )
-            self.artifact_error_label.show()
-            return
-
-        if not archives:
-            archive_text = "None"
-        elif len(archives) == 1:
-            archive_text = archives[0].source_path.name
-        else:
-            archive_text = (
-                f"{len(archives)} archives"
-            )
-
-        if not extracted_packages:
-            extracted_text = "None"
-        elif len(extracted_packages) == 1:
-            extracted_text = extracted_packages[0].root_path.name
-        else:
-            extracted_text = (
-                f"{len(extracted_packages)} packages"
-            )
-
-        self.archive_status_label.setText(
-            archive_text
-        )
-        self.extracted_status_label.setText(
-            extracted_text
-        )
-        self._set_artifact_action_state(
-            can_import=True,
-            can_extract=bool(
-                archives
-            ),
-            can_inspect=bool(
-                extracted_packages
-            ),
-            can_install=bool(
-                extracted_packages
-            ),
-            can_open_contents=contents_available,
-        )
-
-    def _set_artifact_metadata_visible(
-            self,
-            visible: bool,
-    ) -> None:
-        for label in (
-                self.archive_metadata_label,
-                self.archive_status_label,
-                self.extracted_metadata_label,
-                self.extracted_status_label,
-        ):
-            label.setVisible(
-                visible
-            )
 
     @staticmethod
     def _set_label_role(
@@ -1051,33 +675,10 @@ class PackageWorkspacePanel(SectionPanel):
         )
         label.update()
 
-    def _set_artifact_action_state(
+    def _work_item_import_requested(
             self,
-            *,
-            can_import: bool,
-            can_extract: bool,
-            can_inspect: bool,
-            can_install: bool,
-            can_open_contents: bool,
-    ) -> None:
-        self.import_package_button.setEnabled(
-            can_import
-        )
-        self.extract_package_button.setEnabled(
-            can_extract
-        )
-        self.inspect_package_button.setEnabled(
-            can_inspect
-        )
-        self.install_package_button.setEnabled(
-            can_install
-        )
-        self.open_contents_button.setEnabled(
-            can_open_contents
-        )
-
-    def _request_package_import(
-            self,
+            source_path: str,
+            _contents_path: str,
     ) -> None:
         feature_name = self.feature_name
         package_id = self.current_package_id
@@ -1088,24 +689,15 @@ class PackageWorkspacePanel(SectionPanel):
         ):
             return
 
-        selected_path, _selected_filter = QFileDialog.getOpenFileName(
-            self,
-            "Import Implementation Package",
-            "",
-            "ZIP Archives (*.zip)",
-        )
-
-        if not selected_path:
-            return
-
         self.implementation_package_import_requested.emit(
-            selected_path,
+            source_path,
             feature_name,
             package_id,
         )
 
-    def _request_package_extraction(
+    def _work_item_extraction_requested(
             self,
+            _contents_path: str,
     ) -> None:
         feature_name = self.feature_name
         package_id = self.current_package_id
@@ -1121,8 +713,9 @@ class PackageWorkspacePanel(SectionPanel):
             package_id,
         )
 
-    def _request_package_inspection(
+    def _work_item_inspection_requested(
             self,
+            _contents_path: str,
     ) -> None:
         feature_name = self.feature_name
         package_id = self.current_package_id
@@ -1138,8 +731,9 @@ class PackageWorkspacePanel(SectionPanel):
             package_id,
         )
 
-    def _request_package_installation(
+    def _work_item_installation_requested(
             self,
+            _contents_path: str,
     ) -> None:
         feature_name = self.feature_name
         package_id = self.current_package_id
@@ -1154,71 +748,6 @@ class PackageWorkspacePanel(SectionPanel):
             feature_name,
             package_id,
         )
-
-    def _open_selected_package_contents(
-            self,
-    ) -> None:
-        package_id = self.current_package_id
-
-        if package_id is None:
-            return
-
-        item = self._item_for_package_id(
-            package_id
-        )
-
-        if item is None:
-            return
-
-        path_text = item.data(
-            _ITEM_PATH_ROLE
-        )
-
-        if not path_text:
-            return
-
-        contents_path = package_contents_path(
-            Path(
-                str(
-                    path_text
-                )
-            )
-        )
-
-        if (
-                contents_path.is_symlink()
-                or not contents_path.exists()
-                or not contents_path.is_dir()
-        ):
-            self._show_artifact_error(
-                "Package Contents is no longer available."
-            )
-            self.open_contents_button.setEnabled(
-                False
-            )
-            return
-
-        opened = QDesktopServices.openUrl(
-            QUrl.fromLocalFile(
-                str(
-                    contents_path
-                )
-            )
-        )
-
-        if not opened:
-            self._show_artifact_error(
-                "Unable to open Package Contents."
-            )
-
-    def _show_artifact_error(
-            self,
-            text: str,
-    ) -> None:
-        self.artifact_error_label.setText(
-            text
-        )
-        self.artifact_error_label.show()
 
     def _request_add_package(
             self,
@@ -1418,17 +947,7 @@ class PackageWorkspacePanel(SectionPanel):
     def _clear_selected_package_presentation(
             self,
     ) -> None:
-        self.package_title_label.clear()
-        self.package_documents_panel.set_directory(
-            None
-        )
-        self.archive_status_label.clear()
-        self.extracted_status_label.clear()
-        self._set_artifact_metadata_visible(
-            False
-        )
-        self.artifact_error_label.clear()
-        self.artifact_error_label.hide()
+        self.work_item_panel.clear_work_item()
         self.recovery_title_label.clear()
         self.recovery_status_label.clear()
         self._set_label_role(
@@ -1436,13 +955,6 @@ class PackageWorkspacePanel(SectionPanel):
             "secondary",
         )
         self.initialize_package_button.hide()
-        self._set_artifact_action_state(
-            can_import=False,
-            can_extract=False,
-            can_inspect=False,
-            can_install=False,
-            can_open_contents=False,
-        )
 
     def _show_no_selection(
             self,
