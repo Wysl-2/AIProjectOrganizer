@@ -522,5 +522,42 @@ class ProjectPatchWorkspacePanelTests(unittest.TestCase):
             )
 
 
+    def test_patch_drop_emits_project_patch_import_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, _patch_path = (
+                self._panel_with_patch(
+                    root
+                )
+            )
+            emitted = []
+
+            panel.implementation_package_import_requested.connect(
+                lambda source, patch_id: emitted.append(
+                    (
+                        source,
+                        patch_id,
+                    )
+                )
+            )
+
+            panel._patch_drop_requested(
+                "/tmp/fix.zip",
+                "Fix",
+            )
+
+            self.assertEqual(
+                emitted,
+                [
+                    (
+                        "/tmp/fix.zip",
+                        "Fix",
+                    )
+                ],
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

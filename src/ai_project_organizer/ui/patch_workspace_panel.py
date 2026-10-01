@@ -1,12 +1,13 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtCore import QPoint, Qt, QUrl, Signal
+from PySide6.QtGui import QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QLabel,
-    QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -14,6 +15,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ai_project_organizer.ui.implementation_package_drop_list import (
+    ImplementationPackageDropListWidget,
+)
 from ai_project_organizer.ui.implementation_work_item_panel import (
     ImplementationWorkItemPanel,
 )
@@ -106,11 +110,22 @@ class PatchWorkspacePanel(SectionPanel):
         )
         self.status_label.hide()
 
-        self.patch_list = QListWidget(
-            self
+        self.patch_list = ImplementationPackageDropListWidget(
+            target_role=_PATCH_ID_ROLE,
+            allow_background=False,
+            parent=self,
         )
         self.patch_list.currentItemChanged.connect(
             self._patch_selection_changed
+        )
+        self.patch_list.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.patch_list.customContextMenuRequested.connect(
+            self._show_patch_context_menu
+        )
+        self.patch_list.package_drop_requested.connect(
+            self._patch_drop_requested
         )
 
         self.add_patch_button = QPushButton(
@@ -720,6 +735,109 @@ class PatchWorkspacePanel(SectionPanel):
         self.install_implementation_package_requested.emit(
             patch_id
         )
+
+    def _patch_drop_requested(
+            self,
+            source_path: str,
+            patch_id: str,
+    ) -> None:
+        if (
+                self.context_key is None
+                or not patch_id
+        ):
+            return
+
+        self.implementation_package_import_requested.emit(
+            source_path,
+            patch_id,
+        )
+
+    def _show_patch_context_menu(
+            self,
+            position: QPoint,
+    ) -> None:
+        item = self.patch_list.itemAt(
+            position
+        )
+
+        if item is None:
+            return
+
+        patch_id = item.data(
+            _PATCH_ID_ROLE
+        )
+        path_text = item.data(
+            _ITEM_PATH_ROLE
+        )
+        state = item.data(
+            _STRUCTURE_STATE_ROLE
+        )
+
+        if (
+                not patch_id
+                or not path_text
+        ):
+            return
+
+        patch_id = str(
+            patch_id
+        )
+        patch_path = Path(
+            str(
+                path_text
+            )
+        )
+
+        self.patch_list.setCurrentItem(
+            item
+        )
+
+        menu = QMenu(
+            self
+        )
+        initialize_patch_action = None
+
+        if state == _STATE_INCOMPLETE:
+            initialize_patch_action = menu.addAction(
+                "Initialize Patch Structure..."
+            )
+
+        if menu.actions():
+            menu.addSeparator()
+
+        copy_path_action = menu.addAction(
+            "Copy Path"
+        )
+        open_location_action = menu.addAction(
+            "Open in File Manager"
+        )
+
+        selected = menu.exec(
+            self.patch_list.viewport().mapToGlobal(
+                position
+            )
+        )
+
+        if selected is initialize_patch_action:
+            self.initialize_patch_requested.emit(
+                patch_id
+            )
+
+        elif selected is copy_path_action:
+            QApplication.clipboard().setText(
+                str(
+                    patch_path
+                )
+            )
+
+        elif selected is open_location_action:
+            QDesktopServices.openUrl(
+                QUrl.fromLocalFile(
+                    str(
+                        patch_path
+                    )
+                )
+            )
 
     def _request_add_patch(
             self,

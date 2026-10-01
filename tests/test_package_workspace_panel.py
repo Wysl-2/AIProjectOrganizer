@@ -1450,5 +1450,53 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
 
 
+    def test_package_patch_drop_preserves_parent_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, workspace, _package = self._panel_with_package(
+                root
+            )
+            create_package_patch(
+                workspace,
+                "Feature",
+                "PKG01",
+                "PKG01-1",
+            )
+            panel.refresh()
+
+            patch_panel = panel.package_patch_workspace_panel
+            emitted = []
+
+            panel.package_patch_implementation_package_import_requested.connect(
+                lambda source, feature, package_id, patch_id: emitted.append(
+                    (
+                        source,
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+
+            patch_panel._patch_drop_requested(
+                "/tmp/follow-up.zip",
+                "PKG01-1",
+            )
+
+            self.assertEqual(
+                emitted,
+                [
+                    (
+                        "/tmp/follow-up.zip",
+                        "Feature",
+                        "PKG01",
+                        "PKG01-1",
+                    )
+                ],
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
