@@ -364,7 +364,8 @@ class PackageInstallWorkflowTests(unittest.TestCase):
 
     def test_target_disappearing_after_confirmation_blocks_launch(self) -> None:
         def confirm_and_remove(
-                _package_id,
+                _item_type,
+                _item_id,
                 _extracted_package,
                 target_path,
         ) -> bool:

@@ -96,7 +96,7 @@ class PackageInstallUiTests(unittest.TestCase):
             QApplication.processEvents()
 
             self.assertTrue(
-                panel.install_package_button.isEnabled()
+                panel.work_item_panel.install_package_button.isEnabled()
             )
 
             emitted = []
@@ -109,7 +109,7 @@ class PackageInstallUiTests(unittest.TestCase):
                 )
             )
 
-            panel.install_package_button.click()
+            panel.work_item_panel.install_package_button.click()
 
             self.assertEqual(
                 emitted,
