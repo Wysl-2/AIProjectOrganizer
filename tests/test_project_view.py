@@ -17,6 +17,7 @@ from ai_project_organizer.ui.project_view import ProjectView
 from ai_project_organizer.workspace_structure import (
     create_project_feature,
     create_project_package,
+    create_project_patch,
     initialize_project_feature_structure,
     initialize_project_workspace_structure,
 )
@@ -1028,6 +1029,196 @@ class ProjectViewTests(unittest.TestCase):
                         "",
                     ),
                 ],
+            )
+
+
+    def test_project_page_configures_project_patch_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_patch(
+                workspace,
+                "GeneralFix",
+            )
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+
+            self.assertEqual(
+                view.project_patch_workspace_panel.workspace_path,
+                workspace,
+            )
+            self.assertIn(
+                "GeneralFix",
+                self._list_texts(
+                    view.project_patch_workspace_panel.patch_list
+                ),
+            )
+            self.assertIs(
+                view.project_splitter.widget(
+                    2
+                ),
+                view.project_patch_workspace_panel,
+            )
+
+    def test_project_patch_workspace_signals_are_forwarded(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+            patch_path = create_project_patch(
+                workspace,
+                "GeneralFix",
+            )
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+            view.project_patch_workspace_panel.patch_list.setCurrentRow(
+                0
+            )
+
+            added = []
+            initialized = []
+            imported = []
+            extracted = []
+            inspected = []
+            installed = []
+
+            view.add_project_patch_requested.connect(
+                lambda: added.append(
+                    True
+                )
+            )
+            view.initialize_project_patch_requested.connect(
+                initialized.append
+            )
+            view.project_patch_implementation_package_import_requested.connect(
+                lambda source, patch_id: imported.append(
+                    (
+                        source,
+                        patch_id,
+                    )
+                )
+            )
+            view.extract_project_patch_implementation_package_requested.connect(
+                extracted.append
+            )
+            view.inspect_project_patch_implementation_package_requested.connect(
+                inspected.append
+            )
+            view.install_project_patch_implementation_package_requested.connect(
+                installed.append
+            )
+
+            panel = view.project_patch_workspace_panel
+            panel._request_add_patch()
+            panel.initialize_patch_requested.emit(
+                "GeneralFix"
+            )
+            stale_contents = str(
+                patch_path.parent
+                / "Other"
+                / "Contents"
+            )
+            panel.work_item_panel.implementation_package_import_requested.emit(
+                "/tmp/package.zip",
+                stale_contents,
+            )
+            panel.work_item_panel.extract_implementation_package_requested.emit(
+                stale_contents
+            )
+            panel.work_item_panel.inspect_implementation_package_requested.emit(
+                stale_contents
+            )
+            panel.work_item_panel.install_implementation_package_requested.emit(
+                stale_contents
+            )
+
+            self.assertEqual(
+                added,
+                [
+                    True
+                ],
+            )
+            self.assertEqual(
+                initialized,
+                [
+                    "GeneralFix"
+                ],
+            )
+            self.assertEqual(
+                imported,
+                [
+                    (
+                        "/tmp/package.zip",
+                        "GeneralFix",
+                    )
+                ],
+            )
+            self.assertEqual(
+                extracted,
+                [
+                    "GeneralFix"
+                ],
+            )
+            self.assertEqual(
+                inspected,
+                [
+                    "GeneralFix"
+                ],
+            )
+            self.assertEqual(
+                installed,
+                [
+                    "GeneralFix"
+                ],
+            )
+
+    def test_clearing_workspace_clears_project_patch_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_patch(
+                workspace,
+                "GeneralFix",
+            )
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+            view.project_patch_workspace_panel.patch_list.setCurrentRow(
+                0
+            )
+
+            view.set_workspace(
+                None
+            )
+
+            self.assertIsNone(
+                view.project_patch_workspace_panel.workspace_path
+            )
+            self.assertIsNone(
+                view.project_patch_workspace_panel.current_patch_id
+            )
+            self.assertEqual(
+                view.project_patch_workspace_panel.patch_list.count(),
+                0,
             )
 
 

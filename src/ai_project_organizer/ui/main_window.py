@@ -75,15 +75,20 @@ from ai_project_organizer.workspace_paths import (
 from ai_project_organizer.workspace_structure import (
     create_project_feature,
     create_project_package,
+    create_project_patch,
     discover_project_features,
     initialize_project_feature_structure,
     initialize_project_package_structure,
+    initialize_project_patch_structure,
     initialize_project_workspace_structure,
     is_project_feature_structure_initialized,
     is_project_package_structure_initialized,
+    is_project_patch_structure_initialized,
     is_project_workspace_structure_initialized,
     package_contents_path,
+    patch_contents_path,
     project_package_path,
+    project_patch_path,
 )
 
 
@@ -203,6 +208,24 @@ class MainWindow(QMainWindow):
         )
         self.project_view.install_implementation_package_requested.connect(
             self._install_implementation_package
+        )
+        self.project_view.add_project_patch_requested.connect(
+            self._add_project_patch
+        )
+        self.project_view.initialize_project_patch_requested.connect(
+            self._initialize_project_patch_structure_from_view
+        )
+        self.project_view.project_patch_implementation_package_import_requested.connect(
+            self._import_project_patch_implementation_package
+        )
+        self.project_view.extract_project_patch_implementation_package_requested.connect(
+            self._extract_project_patch_implementation_package
+        )
+        self.project_view.inspect_project_patch_implementation_package_requested.connect(
+            self._inspect_project_patch_implementation_package
+        )
+        self.project_view.install_project_patch_implementation_package_requested.connect(
+            self._install_project_patch_implementation_package
         )
 
         self.workspace_navigation_tabs = QTabWidget()
@@ -345,6 +368,14 @@ class MainWindow(QMainWindow):
             self._add_package
         )
 
+        self.add_patch_action = QAction(
+            "Add Patch...",
+            self,
+        )
+        self.add_patch_action.triggered.connect(
+            self._add_project_patch
+        )
+
         self.configure_project_action = QAction(
             "Configure Project...",
             self,
@@ -370,6 +401,9 @@ class MainWindow(QMainWindow):
         )
         project_menu.addAction(
             self.add_package_action
+        )
+        project_menu.addAction(
+            self.add_patch_action
         )
         project_menu.addSeparator()
         project_menu.addAction(
@@ -671,6 +705,56 @@ class MainWindow(QMainWindow):
             self.project_view.refresh()
             return
 
+    def _add_project_patch(
+            self,
+    ) -> None:
+        if self.workspace_path is None:
+            return
+
+        if not self._ensure_project_workspace_structure():
+            return
+
+        patch_id, accepted = QInputDialog.getText(
+            self,
+            "Add Patch",
+            "Patch ID:",
+        )
+
+        if not accepted:
+            return
+
+        try:
+            create_project_patch(
+                self.workspace_path,
+                patch_id,
+            )
+        except ValueError as error:
+            QMessageBox.warning(
+                self,
+                "Invalid Patch ID",
+                str(error),
+            )
+            return
+        except FileExistsError as error:
+            QMessageBox.warning(
+                self,
+                "Patch Already Exists",
+                str(error),
+            )
+            return
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Add Patch",
+                (
+                    "Could not create the Patch:"
+                    f"\n\n{error}"
+                ),
+            )
+            return
+
+        self.project_view.refresh()
+
     def _ensure_project_feature_structure(
             self,
             feature_name: str,
@@ -939,6 +1023,92 @@ class MainWindow(QMainWindow):
         if self._ensure_project_package_structure(
                 feature_name,
                 package_id,
+        ):
+            self.project_view.refresh()
+
+    def _ensure_project_patch_structure(
+            self,
+            patch_id: str,
+    ) -> bool:
+        if self.workspace_path is None:
+            return False
+
+        try:
+            initialized = (
+                is_project_patch_structure_initialized(
+                    self.workspace_path,
+                    patch_id,
+                )
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Initialize Patch Structure",
+                (
+                    "The Patch structure could not be "
+                    f"validated.\n\n{error}"
+                ),
+            )
+            return False
+
+        if initialized:
+            return True
+
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle(
+            "Initialize Patch Structure"
+        )
+        message_box.setIcon(
+            QMessageBox.Icon.Question
+        )
+        message_box.setText(
+            f'Initialize the Patch "{patch_id}"?'
+        )
+        message_box.setInformativeText(
+            (
+                "Create the missing standard Documents and "
+                "Contents folders? Existing files and folders "
+                "will not be moved or deleted."
+            )
+        )
+        message_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+        )
+        message_box.setDefaultButton(
+            QMessageBox.StandardButton.No
+        )
+
+        if (
+                message_box.exec()
+                != QMessageBox.StandardButton.Yes
+        ):
+            return False
+
+        try:
+            initialize_project_patch_structure(
+                self.workspace_path,
+                patch_id,
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Unable to Initialize Patch Structure",
+                (
+                    "Could not create the standard Patch "
+                    f"structure.\n\n{error}"
+                ),
+            )
+            return False
+
+        return True
+
+    def _initialize_project_patch_structure_from_view(
+            self,
+            patch_id: str,
+    ) -> None:
+        if self._ensure_project_patch_structure(
+                patch_id
         ):
             self.project_view.refresh()
 
@@ -1247,6 +1417,118 @@ class MainWindow(QMainWindow):
 
         return package_contents_path(
             package_path
+        )
+
+    def _project_patch_contents_for_artifact_action(
+            self,
+            patch_id: str,
+    ) -> Path | None:
+        if self.workspace_path is None:
+            return None
+
+        try:
+            selected_path = project_patch_path(
+                self.workspace_path,
+                patch_id,
+            )
+        except ValueError as error:
+            QMessageBox.warning(
+                self,
+                "Patch Unavailable",
+                str(error),
+            )
+            return None
+
+        if (
+                selected_path.is_symlink()
+                or not selected_path.exists()
+                or not selected_path.is_dir()
+        ):
+            QMessageBox.warning(
+                self,
+                "Patch Unavailable",
+                (
+                    "The selected Patch no longer exists "
+                    "as an available Patch directory."
+                ),
+            )
+            return None
+
+        if not self._ensure_project_patch_structure(
+                patch_id
+        ):
+            return None
+
+        return patch_contents_path(
+            selected_path
+        )
+
+    def _import_project_patch_implementation_package(
+            self,
+            source_path: str,
+            patch_id: str,
+    ) -> None:
+        contents_path = self._project_patch_contents_for_artifact_action(
+            patch_id
+        )
+
+        if contents_path is None:
+            return
+
+        if self._copy_implementation_package_to_contents(
+                source_path,
+                contents_path,
+        ):
+            self.project_view.refresh()
+
+    def _extract_project_patch_implementation_package(
+            self,
+            patch_id: str,
+    ) -> None:
+        contents_path = self._project_patch_contents_for_artifact_action(
+            patch_id
+        )
+
+        if contents_path is None:
+            return
+
+        self._extract_implementation_package_from_contents(
+            contents_path,
+            item_type="Patch",
+        )
+
+    def _inspect_project_patch_implementation_package(
+            self,
+            patch_id: str,
+    ) -> None:
+        contents_path = self._project_patch_contents_for_artifact_action(
+            patch_id
+        )
+
+        if contents_path is None:
+            return
+
+        self._inspect_implementation_package_from_contents(
+            contents_path,
+            item_type="Patch",
+            item_id=patch_id,
+        )
+
+    def _install_project_patch_implementation_package(
+            self,
+            patch_id: str,
+    ) -> None:
+        contents_path = self._project_patch_contents_for_artifact_action(
+            patch_id
+        )
+
+        if contents_path is None:
+            return
+
+        self._install_implementation_package_from_contents(
+            contents_path,
+            item_type="Patch",
+            item_id=patch_id,
         )
 
     def _extract_implementation_package(
@@ -3248,6 +3530,9 @@ class MainWindow(QMainWindow):
             has_workspace
         )
         self.add_package_action.setEnabled(
+            has_workspace
+        )
+        self.add_patch_action.setEnabled(
             has_workspace
         )
         self.configure_project_action.setEnabled(

@@ -24,6 +24,9 @@ from ai_project_organizer.ui.implementation_package_drop_list import (
 from ai_project_organizer.ui.package_workspace_panel import (
     PackageWorkspacePanel,
 )
+from ai_project_organizer.ui.project_patch_workspace_panel import (
+    ProjectPatchWorkspacePanel,
+)
 from ai_project_organizer.ui.resources import (
     load_icon,
 )
@@ -65,12 +68,21 @@ class ProjectView(QWidget):
     new_document_requested = Signal(str)
     add_feature_requested = Signal()
     add_package_requested = Signal(str)
+    add_project_patch_requested = Signal()
     initialize_project_requested = Signal()
     initialize_feature_requested = Signal(str)
     initialize_package_requested = Signal(
         str,
         str,
     )
+    initialize_project_patch_requested = Signal(str)
+    project_patch_implementation_package_import_requested = Signal(
+        str,
+        str,
+    )
+    extract_project_patch_implementation_package_requested = Signal(str)
+    inspect_project_patch_implementation_package_requested = Signal(str)
+    install_project_patch_implementation_package_requested = Signal(str)
     implementation_package_import_requested = Signal(
         str,
         str,
@@ -289,6 +301,34 @@ class ProjectView(QWidget):
             1,
         )
 
+        self.project_patch_workspace_panel = ProjectPatchWorkspacePanel(
+            page
+        )
+        self.project_patch_workspace_panel.file_open_requested.connect(
+            self.file_open_requested.emit
+        )
+        self.project_patch_workspace_panel.new_document_requested.connect(
+            self.new_document_requested.emit
+        )
+        self.project_patch_workspace_panel.add_patch_requested.connect(
+            self.add_project_patch_requested.emit
+        )
+        self.project_patch_workspace_panel.initialize_patch_requested.connect(
+            self.initialize_project_patch_requested.emit
+        )
+        self.project_patch_workspace_panel.implementation_package_import_requested.connect(
+            self.project_patch_implementation_package_import_requested.emit
+        )
+        self.project_patch_workspace_panel.extract_implementation_package_requested.connect(
+            self.extract_project_patch_implementation_package_requested.emit
+        )
+        self.project_patch_workspace_panel.inspect_implementation_package_requested.connect(
+            self.inspect_project_patch_implementation_package_requested.emit
+        )
+        self.project_patch_workspace_panel.install_implementation_package_requested.connect(
+            self.install_project_patch_implementation_package_requested.emit
+        )
+
         self.project_splitter = QSplitter(
             Qt.Orientation.Vertical,
             page,
@@ -302,6 +342,9 @@ class ProjectView(QWidget):
         self.project_splitter.addWidget(
             self.features_panel
         )
+        self.project_splitter.addWidget(
+            self.project_patch_workspace_panel
+        )
         self.project_splitter.setStretchFactor(
             0,
             1,
@@ -309,6 +352,10 @@ class ProjectView(QWidget):
         self.project_splitter.setStretchFactor(
             1,
             1,
+        )
+        self.project_splitter.setStretchFactor(
+            2,
+            2,
         )
 
         layout = QVBoxLayout(
@@ -574,6 +621,9 @@ class ProjectView(QWidget):
                 None,
                 None,
             )
+            self.project_patch_workspace_panel.set_workspace(
+                None
+            )
             self.page_stack.setCurrentWidget(
                 self.project_page
             )
@@ -592,6 +642,9 @@ class ProjectView(QWidget):
                 None,
                 None,
             )
+            self.project_patch_workspace_panel.set_workspace(
+                None
+            )
             self._show_project_status(
                 f"Project structure error: {error}"
             )
@@ -602,6 +655,9 @@ class ProjectView(QWidget):
             self.package_workspace_panel.set_feature(
                 None,
                 None,
+            )
+            self.project_patch_workspace_panel.set_workspace(
+                None
             )
             self._show_project_status(
                 (
@@ -630,6 +686,9 @@ class ProjectView(QWidget):
             project_documents_path(
                 workspace
             )
+        )
+        self.project_patch_workspace_panel.set_workspace(
+            workspace
         )
 
         try:
