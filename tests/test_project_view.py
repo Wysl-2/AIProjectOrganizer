@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 
 from ai_project_organizer.ui.project_view import ProjectView
 from ai_project_organizer.workspace_structure import (
+    create_package_patch,
     create_project_feature,
     create_project_package,
     create_project_patch,
@@ -1219,6 +1220,186 @@ class ProjectViewTests(unittest.TestCase):
             self.assertEqual(
                 view.project_patch_workspace_panel.patch_list.count(),
                 0,
+            )
+
+
+    def test_package_patch_workspace_signals_are_forwarded(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._initialized_workspace(
+                root
+            )
+            create_project_feature(
+                workspace,
+                "Feature",
+            )
+            package_path = create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+            create_package_patch(
+                workspace,
+                "Feature",
+                "PKG01",
+                "PKG01-1",
+            )
+
+            view = ProjectView()
+            view.set_workspace(
+                workspace
+            )
+            view._open_feature(
+                "Feature"
+            )
+            view.package_workspace_panel.package_list.setCurrentRow(
+                0
+            )
+
+            patch_panel = (
+                view.package_workspace_panel
+                .package_patch_workspace_panel
+            )
+            patch_panel.patch_list.setCurrentRow(
+                0
+            )
+
+            added = []
+            initialized = []
+            imported = []
+            extracted = []
+            inspected = []
+            installed = []
+
+            view.add_package_patch_requested.connect(
+                lambda feature, package_id: added.append(
+                    (
+                        feature,
+                        package_id,
+                    )
+                )
+            )
+            view.initialize_package_patch_requested.connect(
+                lambda feature, package_id, patch_id: initialized.append(
+                    (
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+            view.package_patch_implementation_package_import_requested.connect(
+                lambda source, feature, package_id, patch_id: imported.append(
+                    (
+                        source,
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+            view.extract_package_patch_implementation_package_requested.connect(
+                lambda feature, package_id, patch_id: extracted.append(
+                    (
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+            view.inspect_package_patch_implementation_package_requested.connect(
+                lambda feature, package_id, patch_id: inspected.append(
+                    (
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+            view.install_package_patch_implementation_package_requested.connect(
+                lambda feature, package_id, patch_id: installed.append(
+                    (
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+
+            patch_panel._request_add_patch()
+            patch_panel.initialize_patch_requested.emit(
+                "PKG01-1"
+            )
+            stale_contents = str(
+                package_path
+                / "Patches"
+                / "Other"
+                / "Contents"
+            )
+            patch_panel.work_item_panel.implementation_package_import_requested.emit(
+                "/tmp/patch.zip",
+                stale_contents,
+            )
+            patch_panel.work_item_panel.extract_implementation_package_requested.emit(
+                stale_contents
+            )
+            patch_panel.work_item_panel.inspect_implementation_package_requested.emit(
+                stale_contents
+            )
+            patch_panel.work_item_panel.install_implementation_package_requested.emit(
+                stale_contents
+            )
+
+            self.assertEqual(
+                added,
+                [
+                    (
+                        "Feature",
+                        "PKG01",
+                    )
+                ],
+            )
+            self.assertEqual(
+                initialized,
+                [
+                    (
+                        "Feature",
+                        "PKG01",
+                        "PKG01-1",
+                    )
+                ],
+            )
+            expected = [
+                (
+                    "Feature",
+                    "PKG01",
+                    "PKG01-1",
+                )
+            ]
+            self.assertEqual(
+                extracted,
+                expected,
+            )
+            self.assertEqual(
+                inspected,
+                expected,
+            )
+            self.assertEqual(
+                installed,
+                expected,
+            )
+            self.assertEqual(
+                imported,
+                [
+                    (
+                        "/tmp/patch.zip",
+                        "Feature",
+                        "PKG01",
+                        "PKG01-1",
+                    )
+                ],
             )
 
 

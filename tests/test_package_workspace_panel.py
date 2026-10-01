@@ -22,8 +22,10 @@ from ai_project_organizer.ui.theme import (
     WARNING_COLOR,
 )
 from ai_project_organizer.workspace_structure import (
+    create_package_patch,
     create_project_feature,
     create_project_package,
+    initialize_package_patch_structure,
     initialize_project_package_structure,
     initialize_project_workspace_structure,
 )
@@ -150,7 +152,19 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             panel.details_stack.widget(
                 1
             ),
+            panel.complete_package_page,
+        )
+        self.assertIs(
+            panel.complete_package_splitter.widget(
+                0
+            ),
             panel.work_item_panel,
+        )
+        self.assertIs(
+            panel.complete_package_splitter.widget(
+                1
+            ),
+            panel.package_patch_workspace_panel,
         )
         self.assertEqual(
             panel.recovery_title_label.property(
@@ -441,7 +455,7 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
             self.assertIs(
                 panel.details_stack.currentWidget(),
-                panel.work_item_panel,
+                panel.complete_package_page,
             )
 
     def test_package_document_creation_is_forwarded_from_work_item_panel(
@@ -773,7 +787,7 @@ class PackageWorkspacePanelTests(unittest.TestCase):
             )
             self.assertIs(
                 panel.details_stack.currentWidget(),
-                panel.work_item_panel,
+                panel.complete_package_page,
             )
             self.assertEqual(
                 panel.work_item_panel.documents_panel.directory_path,
@@ -1063,6 +1077,376 @@ class PackageWorkspacePanelTests(unittest.TestCase):
                         "",
                     ),
                 ],
+            )
+
+
+    def test_complete_package_exposes_package_patch_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, _package = self._panel_with_package(
+                root
+            )
+
+            self.assertIs(
+                panel.details_stack.currentWidget(),
+                panel.complete_package_page,
+            )
+            self.assertEqual(
+                panel.package_patch_workspace_panel.owner_label,
+                "Package",
+            )
+            self.assertIsNotNone(
+                panel.package_patch_workspace_panel.context_key
+            )
+
+    def test_package_without_patches_does_not_create_optional_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, package = self._panel_with_package(
+                root
+            )
+
+            self.assertFalse(
+                (
+                    package
+                    / "Patches"
+                ).exists()
+            )
+            self.assertEqual(
+                panel.package_patch_workspace_panel.patch_list.count(),
+                0,
+            )
+            self.assertEqual(
+                panel.package_patch_workspace_panel.no_selection_title_label.text(),
+                "No Patches",
+            )
+
+    def test_package_patch_selection_uses_patch_documents_and_contents(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, workspace, package = self._panel_with_package(
+                root
+            )
+            patch_path = create_package_patch(
+                workspace,
+                "Feature",
+                "PKG01",
+                "PKG01-1",
+            )
+
+            panel.refresh()
+            patch_panel = panel.package_patch_workspace_panel
+            patch_panel.patch_list.setCurrentRow(
+                0
+            )
+
+            self.assertEqual(
+                patch_panel.current_patch_id,
+                "PKG01-1",
+            )
+            self.assertEqual(
+                patch_panel.work_item_panel.documents_panel.directory_path,
+                patch_path / "Documents",
+            )
+            self.assertEqual(
+                patch_panel.work_item_panel.contents_path,
+                patch_path / "Contents",
+            )
+            self.assertTrue(
+                (
+                    package
+                    / "Patches"
+                    / "PKG01-1"
+                ).is_dir()
+            )
+
+    def test_package_patch_actions_include_parent_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, workspace, package = self._panel_with_package(
+                root
+            )
+            create_package_patch(
+                workspace,
+                "Feature",
+                "PKG01",
+                "PKG01-1",
+            )
+            panel.refresh()
+
+            patch_panel = panel.package_patch_workspace_panel
+            patch_panel.patch_list.setCurrentRow(
+                0
+            )
+
+            added = []
+            initialized = []
+            imported = []
+            extracted = []
+            inspected = []
+            installed = []
+
+            panel.add_package_patch_requested.connect(
+                lambda feature, package_id: added.append(
+                    (
+                        feature,
+                        package_id,
+                    )
+                )
+            )
+            panel.initialize_package_patch_requested.connect(
+                lambda feature, package_id, patch_id: initialized.append(
+                    (
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+            panel.package_patch_implementation_package_import_requested.connect(
+                lambda source, feature, package_id, patch_id: imported.append(
+                    (
+                        source,
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+            panel.extract_package_patch_implementation_package_requested.connect(
+                lambda feature, package_id, patch_id: extracted.append(
+                    (
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+            panel.inspect_package_patch_implementation_package_requested.connect(
+                lambda feature, package_id, patch_id: inspected.append(
+                    (
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+            panel.install_package_patch_implementation_package_requested.connect(
+                lambda feature, package_id, patch_id: installed.append(
+                    (
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+
+            patch_panel._request_add_patch()
+            patch_panel.initialize_patch_requested.emit(
+                "PKG01-1"
+            )
+
+            stale_contents = str(
+                package
+                / "Patches"
+                / "Other"
+                / "Contents"
+            )
+            patch_panel.work_item_panel.implementation_package_import_requested.emit(
+                "/tmp/patch.zip",
+                stale_contents,
+            )
+            patch_panel.work_item_panel.extract_implementation_package_requested.emit(
+                stale_contents
+            )
+            patch_panel.work_item_panel.inspect_implementation_package_requested.emit(
+                stale_contents
+            )
+            patch_panel.work_item_panel.install_implementation_package_requested.emit(
+                stale_contents
+            )
+
+            self.assertEqual(
+                added,
+                [
+                    (
+                        "Feature",
+                        "PKG01",
+                    )
+                ],
+            )
+            self.assertEqual(
+                initialized,
+                [
+                    (
+                        "Feature",
+                        "PKG01",
+                        "PKG01-1",
+                    )
+                ],
+            )
+            expected = [
+                (
+                    "Feature",
+                    "PKG01",
+                    "PKG01-1",
+                )
+            ]
+            self.assertEqual(
+                extracted,
+                expected,
+            )
+            self.assertEqual(
+                inspected,
+                expected,
+            )
+            self.assertEqual(
+                installed,
+                expected,
+            )
+            self.assertEqual(
+                imported,
+                [
+                    (
+                        "/tmp/patch.zip",
+                        "Feature",
+                        "PKG01",
+                        "PKG01-1",
+                    )
+                ],
+            )
+
+    def test_incomplete_package_patch_can_request_initialization(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            panel, _workspace, package = self._panel_with_package(
+                root
+            )
+            patches_root = package / "Patches"
+            patches_root.mkdir()
+            (
+                patches_root
+                / "FollowUp"
+            ).mkdir()
+
+            panel.refresh()
+            patch_panel = panel.package_patch_workspace_panel
+            patch_panel.patch_list.setCurrentRow(
+                0
+            )
+
+            emitted = []
+            panel.initialize_package_patch_requested.connect(
+                lambda feature, package_id, patch_id: emitted.append(
+                    (
+                        feature,
+                        package_id,
+                        patch_id,
+                    )
+                )
+            )
+
+            self.assertIn(
+                "Structure incomplete",
+                patch_panel.patch_list.item(
+                    0
+                ).text(),
+            )
+            self.assertIs(
+                patch_panel.details_stack.currentWidget(),
+                patch_panel.recovery_page,
+            )
+
+            patch_panel._request_patch_initialization()
+
+            self.assertEqual(
+                emitted,
+                [
+                    (
+                        "Feature",
+                        "PKG01",
+                        "FollowUp",
+                    )
+                ],
+            )
+
+    def test_package_patch_selection_survives_refresh_and_clears_on_parent_change(
+            self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(
+                temporary_directory
+            )
+            workspace = self._workspace(
+                root
+            )
+            create_project_package(
+                workspace,
+                "Feature",
+                "PKG01",
+            )
+            create_project_package(
+                workspace,
+                "Feature",
+                "PKG02",
+            )
+            create_package_patch(
+                workspace,
+                "Feature",
+                "PKG01",
+                "FollowUp",
+            )
+
+            panel = PackageWorkspacePanel()
+            panel.set_feature(
+                workspace,
+                "Feature",
+            )
+            panel.package_list.setCurrentRow(
+                0
+            )
+            patch_panel = panel.package_patch_workspace_panel
+            patch_panel.patch_list.setCurrentRow(
+                0
+            )
+
+            panel.refresh()
+
+            self.assertEqual(
+                panel.current_package_id,
+                "PKG01",
+            )
+            self.assertEqual(
+                patch_panel.current_patch_id,
+                "FollowUp",
+            )
+
+            panel.package_list.setCurrentRow(
+                1
+            )
+
+            self.assertEqual(
+                panel.current_package_id,
+                "PKG02",
+            )
+            self.assertIsNone(
+                patch_panel.current_patch_id
+            )
+            self.assertEqual(
+                patch_panel.patch_list.count(),
+                0,
             )
 
 

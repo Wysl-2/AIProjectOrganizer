@@ -20,6 +20,9 @@ from ai_project_organizer.ui.implementation_package_drop_list import (
 from ai_project_organizer.ui.implementation_work_item_panel import (
     ImplementationWorkItemPanel,
 )
+from ai_project_organizer.ui.patch_workspace_panel import (
+    PatchWorkspacePanel,
+)
 from ai_project_organizer.ui.resources import (
     load_icon,
 )
@@ -32,6 +35,8 @@ from ai_project_organizer.ui.theme import (
 )
 from ai_project_organizer.workspace_structure import (
     discover_feature_packages,
+    discover_package_patches,
+    is_package_patch_structure_initialized,
     is_project_package_structure_initialized,
     package_contents_path,
     package_documents_path,
@@ -81,6 +86,36 @@ class PackageWorkspacePanel(SectionPanel):
         str,
     )
     install_implementation_package_requested = Signal(
+        str,
+        str,
+    )
+    add_package_patch_requested = Signal(
+        str,
+        str,
+    )
+    initialize_package_patch_requested = Signal(
+        str,
+        str,
+        str,
+    )
+    package_patch_implementation_package_import_requested = Signal(
+        str,
+        str,
+        str,
+        str,
+    )
+    extract_package_patch_implementation_package_requested = Signal(
+        str,
+        str,
+        str,
+    )
+    inspect_package_patch_implementation_package_requested = Signal(
+        str,
+        str,
+        str,
+    )
+    install_package_patch_implementation_package_requested = Signal(
+        str,
         str,
         str,
     )
@@ -156,8 +191,12 @@ class PackageWorkspacePanel(SectionPanel):
             self
         )
         self.no_selection_page = self._build_no_selection_page()
-        self.work_item_panel = ImplementationWorkItemPanel(
+
+        self.complete_package_page = QWidget(
             self
+        )
+        self.work_item_panel = ImplementationWorkItemPanel(
+            self.complete_package_page
         )
         self.work_item_panel.file_open_requested.connect(
             self.file_open_requested.emit
@@ -177,13 +216,81 @@ class PackageWorkspacePanel(SectionPanel):
         self.work_item_panel.install_implementation_package_requested.connect(
             self._work_item_installation_requested
         )
+
+        self.package_patch_workspace_panel = PatchWorkspacePanel(
+            self.complete_package_page
+        )
+        self.package_patch_workspace_panel.file_open_requested.connect(
+            self.file_open_requested.emit
+        )
+        self.package_patch_workspace_panel.new_document_requested.connect(
+            self.new_document_requested.emit
+        )
+        self.package_patch_workspace_panel.add_patch_requested.connect(
+            self._package_patch_add_requested
+        )
+        self.package_patch_workspace_panel.initialize_patch_requested.connect(
+            self._package_patch_initialization_requested
+        )
+        self.package_patch_workspace_panel.implementation_package_import_requested.connect(
+            self._package_patch_import_requested
+        )
+        self.package_patch_workspace_panel.extract_implementation_package_requested.connect(
+            self._package_patch_extraction_requested
+        )
+        self.package_patch_workspace_panel.inspect_implementation_package_requested.connect(
+            self._package_patch_inspection_requested
+        )
+        self.package_patch_workspace_panel.install_implementation_package_requested.connect(
+            self._package_patch_installation_requested
+        )
+
+        self.complete_package_splitter = QSplitter(
+            Qt.Orientation.Vertical,
+            self.complete_package_page,
+        )
+        self.complete_package_splitter.setChildrenCollapsible(
+            False
+        )
+        self.complete_package_splitter.addWidget(
+            self.work_item_panel
+        )
+        self.complete_package_splitter.addWidget(
+            self.package_patch_workspace_panel
+        )
+        self.complete_package_splitter.setStretchFactor(
+            0,
+            2,
+        )
+        self.complete_package_splitter.setStretchFactor(
+            1,
+            1,
+        )
+
+        complete_layout = QVBoxLayout(
+            self.complete_package_page
+        )
+        complete_layout.setContentsMargins(
+            0,
+            0,
+            0,
+            0,
+        )
+        complete_layout.setSpacing(
+            6
+        )
+        complete_layout.addWidget(
+            self.complete_package_splitter,
+            1,
+        )
+
         self.recovery_page = self._build_recovery_page()
 
         self.details_stack.addWidget(
             self.no_selection_page
         )
         self.details_stack.addWidget(
-            self.work_item_panel
+            self.complete_package_page
         )
         self.details_stack.addWidget(
             self.recovery_page
@@ -599,6 +706,7 @@ class PackageWorkspacePanel(SectionPanel):
             return
 
         self._clear_selected_package_presentation()
+        self._clear_package_patch_context()
         self.recovery_title_label.setText(
             package_id
         )
@@ -648,8 +756,43 @@ class PackageWorkspacePanel(SectionPanel):
                 package_path
             ),
         )
+
+        workspace = self.workspace_path
+        feature_name = self.feature_name
+
+        if (
+                workspace is None
+                or not feature_name
+        ):
+            self._clear_package_patch_context()
+        else:
+            self.package_patch_workspace_panel.set_context(
+                (
+                    "package",
+                    workspace,
+                    feature_name,
+                    package_id,
+                ),
+                owner_label="Package",
+                discover_patches=(
+                    lambda workspace=workspace, feature_name=feature_name, package_id=package_id: discover_package_patches(
+                        workspace,
+                        feature_name,
+                        package_id,
+                    )
+                ),
+                is_patch_structure_initialized=(
+                    lambda patch_id, workspace=workspace, feature_name=feature_name, package_id=package_id: is_package_patch_structure_initialized(
+                        workspace,
+                        feature_name,
+                        package_id,
+                        patch_id,
+                    )
+                ),
+            )
+
         self.details_stack.setCurrentWidget(
-            self.work_item_panel
+            self.complete_package_page
         )
 
     @staticmethod
@@ -747,6 +890,125 @@ class PackageWorkspacePanel(SectionPanel):
         self.install_implementation_package_requested.emit(
             feature_name,
             package_id,
+        )
+
+    def _package_patch_add_requested(
+            self,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+        ):
+            return
+
+        self.add_package_patch_requested.emit(
+            feature_name,
+            package_id,
+        )
+
+    def _package_patch_initialization_requested(
+            self,
+            patch_id: str,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+                or not patch_id
+        ):
+            return
+
+        self.initialize_package_patch_requested.emit(
+            feature_name,
+            package_id,
+            patch_id,
+        )
+
+    def _package_patch_import_requested(
+            self,
+            source_path: str,
+            patch_id: str,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+                or not patch_id
+        ):
+            return
+
+        self.package_patch_implementation_package_import_requested.emit(
+            source_path,
+            feature_name,
+            package_id,
+            patch_id,
+        )
+
+    def _package_patch_extraction_requested(
+            self,
+            patch_id: str,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+                or not patch_id
+        ):
+            return
+
+        self.extract_package_patch_implementation_package_requested.emit(
+            feature_name,
+            package_id,
+            patch_id,
+        )
+
+    def _package_patch_inspection_requested(
+            self,
+            patch_id: str,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+                or not patch_id
+        ):
+            return
+
+        self.inspect_package_patch_implementation_package_requested.emit(
+            feature_name,
+            package_id,
+            patch_id,
+        )
+
+    def _package_patch_installation_requested(
+            self,
+            patch_id: str,
+    ) -> None:
+        feature_name = self.feature_name
+        package_id = self.current_package_id
+
+        if (
+                not feature_name
+                or not package_id
+                or not patch_id
+        ):
+            return
+
+        self.install_package_patch_implementation_package_requested.emit(
+            feature_name,
+            package_id,
+            patch_id,
         )
 
     def _request_add_package(
@@ -956,6 +1218,11 @@ class PackageWorkspacePanel(SectionPanel):
         )
         self.initialize_package_button.hide()
 
+    def _clear_package_patch_context(
+            self,
+    ) -> None:
+        self.package_patch_workspace_panel.clear_context()
+
     def _show_no_selection(
             self,
             message: str | None = None,
@@ -963,6 +1230,7 @@ class PackageWorkspacePanel(SectionPanel):
             title: str = "No Package Selected",
     ) -> None:
         self._clear_selected_package_presentation()
+        self._clear_package_patch_context()
         self.no_selection_title_label.setText(
             title
         )

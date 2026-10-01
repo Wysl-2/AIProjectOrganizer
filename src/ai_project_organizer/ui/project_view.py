@@ -100,6 +100,36 @@ class ProjectView(QWidget):
         str,
         str,
     )
+    add_package_patch_requested = Signal(
+        str,
+        str,
+    )
+    initialize_package_patch_requested = Signal(
+        str,
+        str,
+        str,
+    )
+    package_patch_implementation_package_import_requested = Signal(
+        str,
+        str,
+        str,
+        str,
+    )
+    extract_package_patch_implementation_package_requested = Signal(
+        str,
+        str,
+        str,
+    )
+    inspect_package_patch_implementation_package_requested = Signal(
+        str,
+        str,
+        str,
+    )
+    install_package_patch_implementation_package_requested = Signal(
+        str,
+        str,
+        str,
+    )
 
     def __init__(
             self,
@@ -509,6 +539,24 @@ class ProjectView(QWidget):
         )
         self.package_workspace_panel.install_implementation_package_requested.connect(
             self.install_implementation_package_requested.emit
+        )
+        self.package_workspace_panel.add_package_patch_requested.connect(
+            self.add_package_patch_requested.emit
+        )
+        self.package_workspace_panel.initialize_package_patch_requested.connect(
+            self.initialize_package_patch_requested.emit
+        )
+        self.package_workspace_panel.package_patch_implementation_package_import_requested.connect(
+            self.package_patch_implementation_package_import_requested.emit
+        )
+        self.package_workspace_panel.extract_package_patch_implementation_package_requested.connect(
+            self.extract_package_patch_implementation_package_requested.emit
+        )
+        self.package_workspace_panel.inspect_package_patch_implementation_package_requested.connect(
+            self.inspect_package_patch_implementation_package_requested.emit
+        )
+        self.package_workspace_panel.install_package_patch_implementation_package_requested.connect(
+            self.install_package_patch_implementation_package_requested.emit
         )
 
         self.feature_splitter = QSplitter(
